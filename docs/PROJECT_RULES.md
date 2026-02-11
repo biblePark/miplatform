@@ -54,4 +54,6 @@
 - `/docs/PROJECT_RULES.md`
 - `/docs/DECISION_LOG.md`
 - `/docs/ROUND_HISTORY.md`
-
+- Any user-facing flow change updates:
+- `/Users/biblepark/Desktop/works/miflatform-migrator/USER_MANUAL.md`
+- For every round merge, if CLI commands/input paths/output locations/preview verification steps changed, the merge is incomplete until `USER_MANUAL.md` is updated in the same round.

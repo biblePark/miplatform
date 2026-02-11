@@ -1,5 +1,6 @@
 # Docs Index
 
+- `/Users/biblepark/Desktop/works/miflatform-migrator/USER_MANUAL.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/PROJECT_RULES.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/PROJECT_CONTEXT.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/TECH_SPEC.md`

@@ -17,6 +17,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 
 ## Documentation Map
 
+- `/USER_MANUAL.md`: End-user guide (Korean) for input placement, command execution, and result verification.
 - `/docs/PROJECT_RULES.md`: Non-negotiable engineering and migration rules.
 - `/docs/PROJECT_CONTEXT.md`: Domain context, constraints, goals, and assumptions.
 - `/docs/TECH_SPEC.md`: Core architecture and validation design.
