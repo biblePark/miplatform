@@ -106,7 +106,7 @@ Loader contract (R05):
 - Python unit tests for parser/validator/CLI
 - JavaScript tests for generated frontend/API contracts
 
-## 7) Implemented Contract (R01-R03)
+## 7) Implemented Contract (R01-R05)
 
 Python package:
 
@@ -127,18 +127,69 @@ Python package:
 - `src/migrator/cli.py`:
 - `parse` command for single XML
 - `batch-parse` command for directory-level migration reports
+- `map-api` command for TransactionIR-to-Express scaffold and mapping report
+- `src/migrator/api_mapping.py`:
+- transaction mapping planner (`success`/`failure`/`unsupported`)
+- route/service scaffold renderer for Express JavaScript output
+- mapping report model with summary counters and per-transaction status
 
 CLI contract:
 
 - `mifl-migrator parse <xml_path> --out <report.json> [--strict] [--capture-text] [--known-tags-file <txt>] [--known-attrs-file <json>] [--disable-roundtrip-gate] [--roundtrip-mismatch-limit <n>] [--pretty]`
 - `mifl-migrator batch-parse <input_dir> --out-dir <dir> --summary-out <summary.json> [--recursive] [single-parse options...]`
+- `mifl-migrator map-api <xml_path> --out-dir <generated_api_dir> --report-out <mapping_report.json> [single-parse options...]`
 
 Known-profile inputs:
 
 - Tag profile file: newline-delimited tag names
 - Attribute profile file: JSON map like `{ "Screen": ["id"], "*": ["commonAttr"] }`
 
-## 8) Multi-Agent Operational Contract (R04)
+## 8) API Mapping Contract (R05)
+
+Scope:
+
+- Input is `ScreenIR.transactions` (`list[TransactionIR]`) extracted by parser stage.
+- Output is Express scaffold files and a machine-readable JSON mapping report.
+- Existing parse/validation gate semantics are unchanged.
+
+Input contract:
+
+- Each `TransactionIR` contributes:
+- `transaction_id` (preferred symbolic identifier)
+- `endpoint` (target route path)
+- `method` (HTTP verb)
+- `source` (traceability path/line)
+
+Mapping decision contract:
+
+- `success`:
+- endpoint and method exist
+- method is one of `GET|POST|PUT|PATCH|DELETE`
+- route key `(method, endpoint)` is unique within the screen
+- `failure`:
+- missing required fields (`missing_endpoint`, `missing_method`)
+- duplicate route conflict (`duplicate_route:<METHOD>:<PATH>`)
+- `unsupported`:
+- method present but unsupported (`unsupported_http_method:<METHOD>`)
+
+Output contract:
+
+- Route stub: `<out-dir>/src/routes/<screen-stem>.routes.js`
+- Service stub: `<out-dir>/src/services/<screen-stem>.service.js`
+- Mapping report JSON (`--report-out`) includes:
+- `summary.total_transactions`
+- `summary.mapped_success`
+- `summary.mapped_failure`
+- `summary.unsupported`
+- `results[]` with per-transaction status/reason and generated route/service identifiers
+
+Exception and exit contract:
+
+- XML parse/file errors follow existing CLI behavior (`ParseStrictError`/`FileNotFoundError` -> exit code `2`).
+- `map-api` returns exit code `2` when `mapped_failure > 0`, otherwise `0`.
+- `unsupported` mappings are reported but do not force non-zero exit by themselves.
+
+## 9) Multi-Agent Operational Contract (R04)
 
 Parallel round support artifacts:
 
