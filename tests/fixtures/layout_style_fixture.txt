@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Screen id="LayoutStyle" width="1024" height="768" backgroundcolor="#f5f7fa">
+  <Contents>
+    <Container id="conMain" left="24" top="16" right="24" bottom="16" padding="12" background="#ffffff" borderwidth="1" borderstyle="solid" bordercolor="#d0d7e2" borderradius="8">
+      <Static id="staTitle" left="12" top="12" width="260" height="32" text="Dashboard" fontsize="14" fontweight="600" color="#1f2a44" textalign="center" />
+      <Edit id="edtKeyword" left="12" top="56" width="240" height="32" text="Keyword" value="A-100" enable="false" />
+      <Button id="btnRun" left="264" top="56" width="104" height="32" text="Run" visible="false" />
+      <Combo id="cboStatus" left="380" top="56" width="180" height="32" text="Status" />
+      <Grid id="grdOrders" left="12" top="104" width="960" height="620" binddataset="dsOrder" />
+    </Container>
+  </Contents>
+</Screen>
