@@ -26,7 +26,7 @@ function bootstrapManifest(): ManifestBootstrap {
 
 export function PreviewApp() {
   const bootstrap = bootstrapManifest();
-  if (bootstrap.error) {
+  if (bootstrap.error !== null) {
     return (
       <PreviewHostShell
         title="Manifest Contract Error"
@@ -37,7 +37,8 @@ export function PreviewApp() {
     );
   }
 
-  const defaultScreen = bootstrap.manifest.screens[0];
+  const manifest = bootstrap.manifest;
+  const defaultScreen = manifest.screens[0];
   return (
     <BrowserRouter>
       <Routes>
@@ -60,7 +61,7 @@ export function PreviewApp() {
           path="/preview/:screenId"
           element={
             <PreviewScreenRoute
-              manifest={bootstrap.manifest}
+              manifest={manifest}
               loaders={screenModuleLoaders}
             />
           }
