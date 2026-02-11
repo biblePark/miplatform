@@ -38,6 +38,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 5: API mapping scaffold + preview host scaffold + batch summary aggregation.
 - Round 6: UI TSX scaffold generation + preview manifest/registry sync.
 - Round 7: One-command end-to-end migration orchestration with consolidated summary report.
+- Round 8: Runtime wiring contract between generated UI screens and generated behavior store/actions.
 
 ## Quick Start
 
@@ -65,6 +66,12 @@ Run API mapping scaffold generation:
 PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
+Run behavior store/action scaffold generation:
+
+```bash
+PYTHONPATH=src python3 -m migrator gen-behavior-store tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-frontend --report-out out/gen-behavior-store-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+```
+
 Run one-command end-to-end migration orchestration:
 
 ```bash
@@ -74,6 +81,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e tests/fixtures/simple_screen_fixt
 This command executes parse/map-api/gen-ui/sync-preview in sequence and writes:
 
 - Stage reports under `out/e2e` (default): parse/map-api/gen-ui/sync-preview JSON
+- Generated UI stage outputs: `src/screens/*.tsx` plus deterministic runtime-wired `src/behavior/*.store.ts` and `src/behavior/*.actions.ts`
 - Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
 - Summary includes stage statuses, report file references, and generated file references for verification
 
@@ -158,6 +166,7 @@ scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 - Preview host scaffold under `preview-host/` and manifest validator under `src/migrator/preview_manifest.py`.
 - Preview manifest/registry sync utility under `src/migrator/preview_sync.py`.
 - End-to-end orchestration CLI (`migrate-e2e`) with consolidated migration summary report.
+- Deterministic runtime wiring contract module (`src/migrator/runtime_wiring.py`) used by both `gen-ui` and `gen-behavior-store`.
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.

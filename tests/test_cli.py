@@ -282,10 +282,18 @@ class TestCli(unittest.TestCase):
             self.assertTrue(Path(reports["preview_sync_report"]).exists())
             self.assertEqual(Path(reports["consolidated_summary"]), summary_out.resolve())
 
+            self.assertEqual(
+                payload["stages"]["gen_ui"]["behavior_store_hook"],
+                "useSimpleScreenFixtureBehaviorStore",
+            )
+            self.assertEqual(payload["stages"]["gen_ui"]["wired_event_bindings"], 1)
+
             generated_files = set(payload["generated_file_references"])
             self.assertIn(str((api_out_dir / "src" / "routes" / "simple-screen-fixture.routes.js").resolve()), generated_files)
             self.assertIn(str((api_out_dir / "src" / "services" / "simple-screen-fixture.service.js").resolve()), generated_files)
             self.assertIn(str((ui_out_dir / "src" / "screens" / "simple-screen-fixture.tsx").resolve()), generated_files)
+            self.assertIn(str((ui_out_dir / "src" / "behavior" / "simple-screen-fixture.store.ts").resolve()), generated_files)
+            self.assertIn(str((ui_out_dir / "src" / "behavior" / "simple-screen-fixture.actions.ts").resolve()), generated_files)
             self.assertIn(
                 str((preview_host_dir / "src" / "manifest" / "screens.manifest.json").resolve()),
                 generated_files,
@@ -377,11 +385,25 @@ class TestCli(unittest.TestCase):
                 payload["summary"]["rendered_nodes"],
             )
 
+            self.assertEqual(payload["summary"]["wired_event_bindings"], 1)
+
             tsx_path = Path(payload["tsx_file"])
+            store_path = Path(payload["behavior_store_file"])
+            actions_path = Path(payload["behavior_actions_file"])
             self.assertTrue(tsx_path.exists())
+            self.assertTrue(store_path.exists())
+            self.assertTrue(actions_path.exists())
+            self.assertEqual(store_path.name, "simple-screen-fixture.store.ts")
+            self.assertEqual(actions_path.name, "simple-screen-fixture.actions.ts")
+
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn('className="mi-widget mi-widget-button"', tsx_text)
             self.assertIn('data-mi-widget={"button"}', tsx_text)
+            self.assertIn('onClick={behaviorStore.onFnSearch}', tsx_text)
+            self.assertIn(
+                'import { useSimpleScreenFixtureBehaviorStore } from "../behavior/simple-screen-fixture.store";',
+                tsx_text,
+            )
             self.assertIn(
                 'data-mi-source-node={"/Screen[1]/Contents[1]/Button[1]"}',
                 tsx_text,
@@ -417,6 +439,9 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["screen_id"], "simple_screen_fixture")
             self.assertEqual(payload["summary"]["generated_state_keys"], 1)
             self.assertEqual(payload["summary"]["generated_actions"], 2)
+            self.assertEqual(payload["wiring_contract"]["behavior_store_hook_name"], "useSimpleScreenFixtureBehaviorStore")
+            self.assertEqual(len(payload["event_action_bindings"]), 1)
+            self.assertEqual(payload["event_action_bindings"][0]["action_name"], "onFnSearch")
 
             store_path = Path(payload["store_file"])
             actions_path = Path(payload["actions_file"])
@@ -431,6 +456,7 @@ class TestCli(unittest.TestCase):
             self.assertIn("useSimpleScreenFixtureBehaviorStore", store_text)
             self.assertIn("onFnSearch", actions_text)
             self.assertIn("requestSvcOrderSearch", actions_text)
+            self.assertIn("screenBehaviorEventActionBindings", actions_text)
 
     def test_sync_preview_generates_manifest_registry_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

@@ -12,6 +12,7 @@ from migrator.behavior_store_codegen import (  # noqa: E402
     DUPLICATE_ACTION_POLICY,
     generate_behavior_store_artifacts,
     plan_behavior_store_scaffold,
+    plan_event_action_bindings,
 )
 from migrator.models import (  # noqa: E402
     AstNode,
@@ -99,6 +100,9 @@ class TestBehaviorStoreCodegen(unittest.TestCase):
         self.assertEqual(plan.summary.generated_actions, 4)
         self.assertEqual(plan.summary.duplicate_actions, 0)
 
+        event_bindings = plan_event_action_bindings(screen, plan=plan)
+        self.assertEqual([item.action_name for item in event_bindings], ["onFnSearch", "onOnrowclickGrdOrders"])
+
     def test_plan_behavior_store_scaffold_applies_duplicate_suffix_policy(self) -> None:
         screen = _make_screen(
             events=[
@@ -154,6 +158,11 @@ class TestBehaviorStoreCodegen(unittest.TestCase):
 
         self.assertEqual(plan.summary.duplicate_actions, 2)
 
+        event_bindings = plan_event_action_bindings(screen, plan=plan)
+        self.assertEqual(event_bindings[0].action_name, "onFnSave")
+        self.assertEqual(event_bindings[1].action_name, "onFnSave2")
+        self.assertEqual(event_bindings[1].duplicate_of_action_name, "onFnSave")
+
     def test_generate_behavior_store_artifacts_writes_deterministic_files(self) -> None:
         parsed = parse_xml_file(FIXTURE_XML)
 
@@ -173,6 +182,13 @@ class TestBehaviorStoreCodegen(unittest.TestCase):
             self.assertEqual(report.duplicate_action_policy, DUPLICATE_ACTION_POLICY)
             self.assertEqual(report.summary.generated_actions, 2)
             self.assertEqual(report.summary.generated_state_keys, 1)
+            self.assertEqual(report.summary.total_events, 1)
+            self.assertEqual(len(report.event_action_bindings), 1)
+            self.assertEqual(report.event_action_bindings[0].action_name, "onFnSearch")
+            self.assertEqual(
+                report.wiring_contract.behavior_store_hook_name,
+                "useSimpleScreenFixtureBehaviorStore",
+            )
             self.assertTrue(store_path.exists())
             self.assertTrue(actions_path.exists())
 
@@ -182,8 +198,10 @@ class TestBehaviorStoreCodegen(unittest.TestCase):
             self.assertIn("useSimpleScreenFixtureBehaviorStore", store_text)
             self.assertIn("bindingDsOrder", store_text)
             self.assertIn("createScreenBehaviorActions", store_text)
+            self.assertIn("runtimeWiring", store_text)
             self.assertIn("onFnSearch", actions_text)
             self.assertIn("requestSvcOrderSearch", actions_text)
+            self.assertIn("screenBehaviorEventActionBindings", actions_text)
             self.assertIn("duplicateActionPolicy", actions_text)
 
 
