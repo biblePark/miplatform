@@ -277,6 +277,50 @@ class TestCli(unittest.TestCase):
             )
             self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
 
+    def test_gen_behavior_store_generates_store_actions_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-behavior"
+            report_out = Path(tmp_dir) / "behavior-store-report.json"
+            rc = main(
+                [
+                    "gen-behavior-store",
+                    str(FIXTURE_XML),
+                    "--out-dir",
+                    str(out_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--strict",
+                    "--capture-text",
+                    "--known-tags-file",
+                    str(KNOWN_TAGS),
+                    "--known-attrs-file",
+                    str(KNOWN_ATTRS),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(report_out.exists())
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["screen_id"], "simple_screen_fixture")
+            self.assertEqual(payload["summary"]["generated_state_keys"], 1)
+            self.assertEqual(payload["summary"]["generated_actions"], 2)
+
+            store_path = Path(payload["store_file"])
+            actions_path = Path(payload["actions_file"])
+            self.assertTrue(store_path.exists())
+            self.assertTrue(actions_path.exists())
+            self.assertEqual(store_path.name, "simple-screen-fixture.store.ts")
+            self.assertEqual(actions_path.name, "simple-screen-fixture.actions.ts")
+
+            store_text = store_path.read_text(encoding="utf-8")
+            actions_text = actions_path.read_text(encoding="utf-8")
+            self.assertIn("bindingDsOrder", store_text)
+            self.assertIn("useSimpleScreenFixtureBehaviorStore", store_text)
+            self.assertIn("onFnSearch", actions_text)
+            self.assertIn("requestSvcOrderSearch", actions_text)
+
     def test_sync_preview_generates_manifest_registry_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
