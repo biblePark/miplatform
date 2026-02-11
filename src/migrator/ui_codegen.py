@@ -11,6 +11,7 @@ from .models import AstNode, ScreenIR, SourceRef
 
 _NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
 _NUMERIC_VALUE_RE = re.compile(r"^-?\d+(\.\d+)?$")
+_CONTAINER_TAGS = frozenset({"screen", "contents", "container"})
 
 
 @dataclass(slots=True)
@@ -125,17 +126,6 @@ def _style_attribute(style: dict[str, str]) -> str:
     return f" style={{{style_json}}}"
 
 
-def _node_label(node: AstNode) -> str:
-    label = node.tag
-    node_id = _attr_lookup(node.attributes, "id")
-    if node_id:
-        label = f"{label}#{node_id}"
-    text = _attr_lookup(node.attributes, "text")
-    if text:
-        label = f"{label} ({text})"
-    return label
-
-
 def _node_attrs_label(node: AstNode) -> str | None:
     if not node.attributes:
         return None
@@ -146,34 +136,158 @@ def _node_attrs_label(node: AstNode) -> str | None:
     return ", ".join(parts)
 
 
-def _render_node(node: AstNode, *, depth: int, is_root: bool = False) -> list[str]:
+def _widget_kind(tag: str) -> str:
+    tag_lower = tag.lower()
+    if tag_lower in _CONTAINER_TAGS:
+        return "container"
+    if tag_lower in {"button", "edit", "static", "combo", "grid"}:
+        return tag_lower
+    return "fallback"
+
+
+def _node_display_text(node: AstNode, *, fallback: str) -> str:
+    text_attr = _attr_lookup(node.attributes, "text")
+    if text_attr is not None and text_attr.strip():
+        return text_attr.strip()
+    if node.text is not None and node.text.strip():
+        return node.text.strip()
+    node_id = _attr_lookup(node.attributes, "id")
+    if node_id is not None and node_id.strip():
+        return node_id.strip()
+    return fallback
+
+
+def _trace_attributes(node: AstNode) -> list[str]:
+    attrs = [
+        f"data-mi-tag={_to_jsx_string(node.tag)}",
+        f"data-mi-source-node={_to_jsx_string(node.source.node_path)}",
+        f"data-mi-source-file={_to_jsx_string(node.source.file_path)}",
+    ]
+    if node.source.line is not None:
+        attrs.append(f"data-mi-source-line={_to_jsx_string(str(node.source.line))}")
+    attrs_label = _node_attrs_label(node)
+    if attrs_label is not None:
+        attrs.append(f"data-mi-attrs={_to_jsx_string(attrs_label)}")
+    return attrs
+
+
+def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[str]:
     indent = "  " * depth
-    child_indent = "  " * (depth + 1)
+    if widget_kind == "container":
+        return []
+
+    if widget_kind == "button":
+        label = _node_display_text(node, fallback="Button")
+        return [
+            (
+                f'{indent}<Button className="mi-widget mi-widget-button" '
+                f"variant=\"contained\">{_to_jsx_string(label)}</Button>"
+            )
+        ]
+
+    if widget_kind == "edit":
+        label = _node_display_text(node, fallback="Edit")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        return [
+            (
+                f'{indent}<TextField className="mi-widget mi-widget-edit" '
+                f"size=\"small\" label={_to_jsx_string(label)} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "static":
+        value = _node_display_text(node, fallback="Static")
+        return [
+            (
+                f'{indent}<Typography className="mi-widget mi-widget-static" '
+                f"variant=\"body2\">{_to_jsx_string(value)}</Typography>"
+            )
+        ]
+
+    if widget_kind == "combo":
+        label = _node_display_text(node, fallback="Combo")
+        placeholder = f"Select {label}"
+        return [
+            f'{indent}<FormControl className="mi-widget mi-widget-combo" size="small">',
+            f"{indent}  <InputLabel>{_to_jsx_string(label)}</InputLabel>",
+            (
+                f"{indent}  <Select label={_to_jsx_string(label)} "
+                f"defaultValue={_to_jsx_string('')}>"
+            ),
+            f"{indent}    <MenuItem value={_to_jsx_string('')}>{_to_jsx_string(placeholder)}</MenuItem>",
+            f"{indent}  </Select>",
+            f"{indent}</FormControl>",
+        ]
+
+    if widget_kind == "grid":
+        grid_title = _node_display_text(node, fallback="Grid")
+        bind_dataset = _attr_lookup(node.attributes, "binddataset")
+        header_text = (
+            f"{grid_title} ({bind_dataset})"
+            if bind_dataset is not None and bind_dataset.strip()
+            else grid_title
+        )
+        return [
+            f'{indent}<TableContainer className="mi-widget mi-widget-grid">',
+            f"{indent}  <Table size=\"small\" aria-label={_to_jsx_string(grid_title)}>",
+            f"{indent}    <TableHead>",
+            f"{indent}      <TableRow>",
+            f"{indent}        <TableCell>{_to_jsx_string(header_text)}</TableCell>",
+            f"{indent}      </TableRow>",
+            f"{indent}    </TableHead>",
+            f"{indent}    <TableBody>",
+            f"{indent}      <TableRow>",
+            f"{indent}        <TableCell>{_to_jsx_string('Generated grid placeholder')}</TableCell>",
+            f"{indent}      </TableRow>",
+            f"{indent}    </TableBody>",
+            f"{indent}  </Table>",
+            f"{indent}</TableContainer>",
+        ]
+
+    return [
+        (
+            f'{indent}<Typography className="mi-widget mi-widget-fallback" '
+            f'variant="caption">{_to_jsx_string(f"Unsupported tag: {node.tag}")}</Typography>'
+        )
+    ]
+
+
+def _render_node(
+    node: AstNode,
+    *,
+    depth: int,
+    warnings: list[str],
+    is_root: bool = False,
+) -> list[str]:
+    indent = "  " * depth
     class_token = _to_css_token(node.tag)
+    widget_kind = _widget_kind(node.tag)
+    trace_attrs = _trace_attributes(node)
+    if widget_kind == "fallback":
+        trace_attrs.append(f"data-mi-fallback={_to_jsx_string('unsupported-tag')}")
+        warnings.append(
+            (
+                f"Unsupported widget tag '{node.tag}' at {node.source.node_path}; "
+                "rendered as fallback widget."
+            )
+        )
     style_attr = _style_attribute(_build_node_style(node, is_root=is_root))
+    trace_payload = " ".join(trace_attrs)
 
     lines = [
         f"{indent}{{/* {_source_comment(node.source)} */}}",
         (
-            f'{indent}<div className="mi-node mi-node-{class_token}" '
-            f"data-mi-tag={_to_jsx_string(node.tag)} "
-            f"data-mi-source-node={_to_jsx_string(node.source.node_path)} "
-            f"data-mi-source-file={_to_jsx_string(node.source.file_path)}"
-            f"{style_attr}>"
+            f'{indent}<Box className="mi-widget-shell mi-widget-shell-{class_token}" '
+            f"data-mi-widget={_to_jsx_string(widget_kind)} "
+            f"{trace_payload}{style_attr}>"
         ),
-        f'{child_indent}<div className="mi-node-label">{_to_jsx_string(_node_label(node))}</div>',
     ]
 
-    attrs_label = _node_attrs_label(node)
-    if attrs_label is not None:
-        lines.append(
-            f'{child_indent}<div className="mi-node-attrs">{_to_jsx_string(attrs_label)}</div>'
-        )
-
+    lines.extend(_render_widget_body(node, widget_kind=widget_kind, depth=depth + 1))
     for child in node.children:
-        lines.extend(_render_node(child, depth=depth + 1))
-
-    lines.append(f"{indent}</div>")
+        lines.extend(_render_node(child, depth=depth + 1, warnings=warnings))
+    lines.append(f"{indent}</Box>")
     return lines
 
 
@@ -184,7 +298,12 @@ def _count_nodes(node: AstNode) -> int:
     return total
 
 
-def _render_screen_component(screen: ScreenIR, component_name: str) -> str:
+def _render_screen_component(
+    screen: ScreenIR,
+    component_name: str,
+    *,
+    warnings: list[str],
+) -> str:
     root = screen.root
     header_source_file = _escape_comment(root.source.file_path)
     header_source_node = _escape_comment(root.source.node_path)
@@ -195,6 +314,7 @@ def _render_screen_component(screen: ScreenIR, component_name: str) -> str:
         f"/* sourceNodePath: {header_source_node} */",
         "",
         'import type { JSX } from "react";',
+        'import { Box, Button, FormControl, InputLabel, MenuItem, Select, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";',
         "",
         f"export default function {component_name}(): JSX.Element {{",
         "  return (",
@@ -205,7 +325,7 @@ def _render_screen_component(screen: ScreenIR, component_name: str) -> str:
             f"data-mi-source-file={_to_jsx_string(root.source.file_path)}>"
         ),
     ]
-    lines.extend(_render_node(root, depth=3, is_root=True))
+    lines.extend(_render_node(root, depth=3, warnings=warnings, is_root=True))
     lines.extend(
         [
             "    </section>",
@@ -229,10 +349,13 @@ def generate_ui_codegen_artifacts(
     tsx_path = out_root / "src" / "screens" / f"{screen_stem}.tsx"
     tsx_path.parent.mkdir(parents=True, exist_ok=True)
 
-    tsx_path.write_text(_render_screen_component(screen, component_name), encoding="utf-8")
+    warnings: list[str] = []
+    tsx_path.write_text(
+        _render_screen_component(screen, component_name, warnings=warnings),
+        encoding="utf-8",
+    )
 
     total_nodes = _count_nodes(screen.root)
-    warnings: list[str] = []
     if total_nodes <= 1:
         warnings.append("Screen has no child nodes; generated output is minimal.")
 

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Screen id="WidgetMap" width="800" height="600">
+  <Contents>
+    <Container id="conMain" left="8" top="8" width="784" height="584">
+      <Static id="staTitle" left="12" top="12" width="220" height="24" text="Order Dashboard" />
+      <Edit id="edtKeyword" left="12" top="44" width="220" height="32" text="Keyword" value="A-100" />
+      <Combo id="cboStatus" left="244" top="44" width="180" height="32" text="Status" />
+      <Button id="btnSearch" left="436" top="44" width="104" height="32" text="Search" onclick="fnSearch" />
+      <Grid id="grdOrders" left="12" top="88" width="760" height="440" binddataset="dsOrder" />
+      <UnknownWidget id="unkLegacy" left="12" top="536" width="200" height="24" text="Legacy Element" />
+    </Container>
+  </Contents>
+</Screen>
