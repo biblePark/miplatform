@@ -1,0 +1,57 @@
+{
+  "round_id": "R09",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "cd preview-host && npm run build"
+  ],
+  "lanes": [
+    {
+      "name": "fidelity-audit-gates",
+      "branch_name": "codex/r09-fidelity-audit-gates",
+      "worktree_path": "/tmp/miflatform-r09-fidelity-audit-gates",
+      "objective": "Add deterministic fidelity audit gates that prove XML-to-generated-UI completeness with measurable reports.",
+      "deliverables": [
+        "Add fidelity audit module/report schema that compares XML inventory vs generated UI inventory per screen",
+        "Emit explicit missing-node and attribute-position/style coverage risk fields that can fail strict verification",
+        "Expose fidelity audit in user-facing execution flow (new command or migrate-e2e integration) without breaking existing commands",
+        "Add tests for pass/fail fidelity audit scenarios and deterministic report serialization"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "event-wiring-coverage",
+      "branch_name": "codex/r09-event-wiring-coverage",
+      "worktree_path": "/tmp/miflatform-r09-event-wiring-coverage",
+      "objective": "Expand generated UI event wiring coverage and produce deterministic unsupported-event inventory for migration risk tracking.",
+      "deliverables": [
+        "Extend runtime wiring event mapping policy beyond current minimal supported on* attributes",
+        "Preserve deterministic duplicate-safe handler naming and import/use contracts in generated TSX",
+        "Emit unsupported event inventory warnings in structured report fields for regression visibility",
+        "Add tests validating additional event prop bindings and unsupported-event reporting behavior"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    },
+    {
+      "name": "transaction-adapter-contract",
+      "branch_name": "codex/r09-transaction-adapter-contract",
+      "worktree_path": "/tmp/miflatform-r09-transaction-adapter-contract",
+      "objective": "Replace transaction placeholder actions with generated API adapter contracts so behavior migration completion can be verified.",
+      "deliverables": [
+        "Define deterministic generated adapter contract for transaction actions (request/response/error envelope hooks)",
+        "Update behavior store/action generation to call adapter contracts instead of TODO-only stubs",
+        "Ensure generated artifacts remain deterministic and backward-compatible with existing runtime wiring",
+        "Add tests for transaction action generation, adapter hook contracts, and failure-path scaffolding"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    }
+  ]
+}
