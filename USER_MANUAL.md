@@ -48,7 +48,39 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 
 ## 4. 기본 작업 순서
 
-### 4.1 단일 XML 파싱 검증
+### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
+
+하나의 XML 기준으로 `parse -> map-api -> gen-ui -> sync-preview`를 한 번에 실행합니다.
+
+```bash
+PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
+  --out-dir out/e2e \
+  --api-out-dir generated/api \
+  --ui-out-dir generated/frontend \
+  --preview-host-dir preview-host \
+  --strict \
+  --capture-text \
+  --known-tags-file data/input/profiles/known_tags.txt \
+  --known-attrs-file data/input/profiles/known_attrs.json \
+  --pretty
+```
+
+주요 산출물:
+
+- 통합 요약 리포트: `out/e2e/<파일명>.migration-summary.json`
+- 단계별 리포트: `out/e2e/<파일명>.parse-report.json`, `out/e2e/<파일명>.map-api-report.json`, `out/e2e/<파일명>.gen-ui-report.json`, `out/e2e/<파일명>.preview-sync-report.json`
+- 생성 코드:
+- API 스텁: `generated/api/src/routes`, `generated/api/src/services`
+- UI 화면: `generated/frontend/src/screens`
+- Preview 동기화: `preview-host/src/manifest/screens.manifest.json`, `preview-host/src/screens/registry.generated.ts`
+
+확인 포인트:
+
+- 통합 리포트 `overall_status`, `overall_exit_code`
+- `stages`별 상태(`parse`, `map_api`, `gen_ui`, `sync_preview`)
+- `generated_file_references` 목록
+
+### 4.2 단일 XML 파싱 검증
 
 ```bash
 PYTHONPATH=src python3 -m migrator parse data/input/xml/<파일명>.xml \
@@ -65,7 +97,7 @@ PYTHONPATH=src python3 -m migrator parse data/input/xml/<파일명>.xml \
 - `out/parse-<파일명>.json` 생성 여부
 - `gates` 항목이 모두 `passed=true`인지
 
-### 4.2 다수 XML 일괄 파싱
+### 4.3 다수 XML 일괄 파싱
 
 ```bash
 PYTHONPATH=src python3 -m migrator batch-parse data/input/xml \
@@ -84,7 +116,7 @@ PYTHONPATH=src python3 -m migrator batch-parse data/input/xml \
 - `out/batch-summary.json`의 `failures`, `gate_pass_fail_counts`
 - 개별 리포트: `out/batch-reports/*.json`
 
-### 4.3 API 스캐폴드 생성
+### 4.4 API 스캐폴드 생성
 
 ```bash
 PYTHONPATH=src python3 -m migrator map-api data/input/xml/<파일명>.xml \
@@ -102,7 +134,7 @@ PYTHONPATH=src python3 -m migrator map-api data/input/xml/<파일명>.xml \
 - 라우트/서비스 스텁: `out/generated-api/src/routes`, `out/generated-api/src/services`
 - 매핑 보고서: `out/map-api-<파일명>.json`
 
-### 4.4 UI TSX 스캐폴드 생성 (R06)
+### 4.5 UI TSX 스캐폴드 생성 (R06)
 
 ```bash
 PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
@@ -120,7 +152,7 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 - 생성 컴포넌트: `generated/frontend/src/screens/*.tsx`
 - 코드젠 보고서: `out/gen-ui-<파일명>.json`
 
-### 4.5 Preview Host 동기화 (R06)
+### 4.6 Preview Host 동기화 (R06)
 
 UI 생성 결과를 브라우저에서 열 수 있도록 manifest/registry를 동기화합니다.
 
@@ -184,8 +216,8 @@ npm run build
 ## 7. 권장 실행 체크리스트
 
 1. XML 입력 배치 (`data/input/xml`)
-2. `parse` 또는 `batch-parse`로 strict 게이트 확인
-3. `map-api` / `gen-ui` 실행
-4. `sync-preview` 실행
+2. `migrate-e2e` 실행으로 전체 파이프라인 1회 수행
+3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
+4. 필요 시 `batch-parse` 또는 개별 명령(`parse`/`map-api`/`gen-ui`/`sync-preview`)로 세부 점검
 5. `preview-host`에서 `npm run dev`로 육안 확인
 6. `preview-host`에서 `npm run build` 최종 확인

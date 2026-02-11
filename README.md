@@ -36,6 +36,8 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 3: Transaction/Script extraction + canonical hash gate + batch parse CLI.
 - Round 4: Multi-agent operation pack (subagent templates + lane setup/brief scripts).
 - Round 5: API mapping scaffold + preview host scaffold + batch summary aggregation.
+- Round 6: UI TSX scaffold generation + preview manifest/registry sync.
+- Round 7: One-command end-to-end migration orchestration with consolidated summary report.
 
 ## Quick Start
 
@@ -62,6 +64,18 @@ Run API mapping scaffold generation:
 ```bash
 PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
+
+Run one-command end-to-end migration orchestration:
+
+```bash
+PYTHONPATH=src python3 -m migrator migrate-e2e tests/fixtures/simple_screen_fixture.txt --out-dir out/e2e --api-out-dir generated/api --ui-out-dir generated/frontend --preview-host-dir preview-host --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+```
+
+This command executes parse/map-api/gen-ui/sync-preview in sequence and writes:
+
+- Stage reports under `out/e2e` (default): parse/map-api/gen-ui/sync-preview JSON
+- Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
+- Summary includes stage statuses, report file references, and generated file references for verification
 
 Sync generated UI screens into preview-host manifest + registry:
 
@@ -136,13 +150,14 @@ Create parallel lane worktrees:
 scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 ```
 
-## Implemented Scope (R01-R05)
+## Implemented Scope (R01-R07)
 
 - Parser, validator, canonicalizer, and CLI pipeline under `src/migrator/`.
 - Unit tests for parser/validator/CLI under `tests/`.
 - API mapping scaffold generator under `src/migrator/api_mapping.py`.
 - Preview host scaffold under `preview-host/` and manifest validator under `src/migrator/preview_manifest.py`.
 - Preview manifest/registry sync utility under `src/migrator/preview_sync.py`.
+- End-to-end orchestration CLI (`migrate-e2e`) with consolidated migration summary report.
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.

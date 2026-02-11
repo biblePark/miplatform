@@ -16,6 +16,7 @@ from .preview_sync import sync_preview_host
 STRICT_GATE_FAILURE_PREFIX = "Strict parse failed for gates:"
 XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
 FAILURE_LEADERBOARD_LIMIT = 10
+MIGRATE_E2E_COMMAND_NAME = "migrate-e2e"
 
 
 def _load_known_tags(path: str | None) -> set[str] | None:
@@ -153,6 +154,26 @@ def _build_failure_file_leaderboard(
     return leaderboard[: max(0, limit)]
 
 
+def _to_report_file_stem(xml_path: Path) -> str:
+    raw = xml_path.stem.strip()
+    if not raw:
+        return "screen"
+    stem = "".join(ch if (ch.isalnum() or ch in {"-", "_"}) else "-" for ch in raw)
+    stem = stem.strip("-_")
+    return stem or "screen"
+
+
+def _dedupe_preserve_order(paths: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for path in paths:
+        if path in seen:
+            continue
+        deduped.append(path)
+        seen.add(path)
+    return deduped
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mifl-migrator")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -245,6 +266,62 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional output path for sync report JSON",
     )
     sync_preview_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
+
+    migrate_e2e_cmd = subparsers.add_parser(
+        MIGRATE_E2E_COMMAND_NAME,
+        help="Run parse/map-api/gen-ui/sync-preview for one XML and emit consolidated summary JSON",
+    )
+    migrate_e2e_cmd.add_argument("xml_path", help="Path to source XML file")
+    migrate_e2e_cmd.add_argument(
+        "--out-dir",
+        default="out/e2e",
+        help="Directory for stage report files and default summary output path (default: out/e2e)",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--summary-out",
+        help="Optional explicit output path for consolidated summary JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--parse-report-out",
+        help="Optional explicit output path for parse stage report JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--map-report-out",
+        help="Optional explicit output path for map-api stage report JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--ui-report-out",
+        help="Optional explicit output path for gen-ui stage report JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--preview-report-out",
+        help="Optional explicit output path for sync-preview stage report JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--api-out-dir",
+        default="generated/api",
+        help="Directory where generated API route/service stubs are written (default: generated/api)",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--ui-out-dir",
+        default="generated/frontend",
+        help="Directory where generated UI files are written (default: generated/frontend)",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--preview-host-dir",
+        default="preview-host",
+        help="Preview host root directory (default: preview-host)",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--manifest-file",
+        help="Optional explicit output path for screens manifest JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--registry-generated-file",
+        help="Optional explicit output path for generated registry TypeScript module",
+    )
+    _add_common_parse_options(migrate_e2e_cmd)
+    migrate_e2e_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
     return parser
 
@@ -390,6 +467,203 @@ def run_sync_preview(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_migrate_e2e(args: argparse.Namespace) -> int:
+    xml_path = Path(args.xml_path).resolve()
+    out_dir = Path(args.out_dir).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    stem = _to_report_file_stem(xml_path)
+    parse_report_out = (
+        Path(args.parse_report_out).resolve()
+        if args.parse_report_out
+        else out_dir / f"{stem}.parse-report.json"
+    )
+    map_report_out = (
+        Path(args.map_report_out).resolve()
+        if args.map_report_out
+        else out_dir / f"{stem}.map-api-report.json"
+    )
+    ui_report_out = (
+        Path(args.ui_report_out).resolve()
+        if args.ui_report_out
+        else out_dir / f"{stem}.gen-ui-report.json"
+    )
+    preview_report_out = (
+        Path(args.preview_report_out).resolve()
+        if args.preview_report_out
+        else out_dir / f"{stem}.preview-sync-report.json"
+    )
+    summary_out = (
+        Path(args.summary_out).resolve()
+        if args.summary_out
+        else out_dir / f"{stem}.migration-summary.json"
+    )
+
+    stage_status: dict[str, dict[str, object]] = {
+        "parse": {"status": "pending"},
+        "map_api": {"status": "pending"},
+        "gen_ui": {"status": "pending"},
+        "sync_preview": {"status": "pending"},
+    }
+    generated_files: list[str] = []
+    errors: list[str] = []
+    warnings: list[str] = []
+    screen_id: str | None = None
+    exit_code = 0
+
+    report_files = {
+        "parse_report": str(parse_report_out),
+        "map_api_report": str(map_report_out),
+        "gen_ui_report": str(ui_report_out),
+        "preview_sync_report": str(preview_report_out),
+        "consolidated_summary": str(summary_out),
+    }
+
+    config = _build_parse_config(args)
+
+    try:
+        parse_report = parse_xml_file(xml_path, config=config)
+    except (ParseStrictError, FileNotFoundError) as exc:
+        error_message = str(exc)
+        print(error_message, file=sys.stderr)
+        stage_status["parse"] = {"status": "failure", "error": error_message}
+        stage_status["map_api"] = {"status": "skipped", "reason": "parse_failed"}
+        stage_status["gen_ui"] = {"status": "skipped", "reason": "parse_failed"}
+        stage_status["sync_preview"] = {"status": "skipped", "reason": "parse_failed"}
+        errors.append(f"parse: {error_message}")
+        exit_code = 2
+    else:
+        _write_json_file(parse_report_out, parse_report.to_dict(), pretty=args.pretty)
+        failed_gates = sorted(gate.name for gate in parse_report.gates if not gate.passed)
+        screen_id = parse_report.screen.screen_id
+        stage_status["parse"] = {
+            "status": "success",
+            "report_file": str(parse_report_out),
+            "failed_gate_count": len(failed_gates),
+            "failed_gates": failed_gates,
+            "warning_count": len(parse_report.warnings),
+            "error_count": len(parse_report.errors),
+        }
+        warnings.extend(f"parse: {message}" for message in parse_report.warnings)
+        errors.extend(f"parse: {message}" for message in parse_report.errors)
+
+        try:
+            map_report = generate_api_mapping_artifacts(
+                screen=parse_report.screen,
+                input_xml_path=str(xml_path),
+                out_dir=args.api_out_dir,
+            )
+        except Exception as exc:  # pragma: no cover - defensive path
+            error_message = f"{type(exc).__name__}: {exc}"
+            print(error_message, file=sys.stderr)
+            stage_status["map_api"] = {"status": "failure", "error": error_message}
+            stage_status["gen_ui"] = {"status": "skipped", "reason": "map_api_exception"}
+            stage_status["sync_preview"] = {"status": "skipped", "reason": "map_api_exception"}
+            errors.append(f"map_api: {error_message}")
+            exit_code = 2
+        else:
+            _write_json_file(map_report_out, map_report.to_dict(), pretty=args.pretty)
+            generated_files.extend([map_report.route_file, map_report.service_file])
+            map_stage_failure = map_report.summary.mapped_failure > 0
+            stage_status["map_api"] = {
+                "status": "failure" if map_stage_failure else "success",
+                "report_file": str(map_report_out),
+                "route_file": map_report.route_file,
+                "service_file": map_report.service_file,
+                "total_transactions": map_report.summary.total_transactions,
+                "mapped_success": map_report.summary.mapped_success,
+                "mapped_failure": map_report.summary.mapped_failure,
+                "unsupported": map_report.summary.unsupported,
+            }
+            warnings.extend(f"map_api: {message}" for message in map_report.warnings)
+            if map_stage_failure:
+                exit_code = 2
+                errors.append(
+                    f"map_api: mapping failures detected ({map_report.summary.mapped_failure})"
+                )
+
+            try:
+                ui_report = generate_ui_codegen_artifacts(
+                    screen=parse_report.screen,
+                    input_xml_path=str(xml_path),
+                    out_dir=args.ui_out_dir,
+                )
+            except Exception as exc:  # pragma: no cover - defensive path
+                error_message = f"{type(exc).__name__}: {exc}"
+                print(error_message, file=sys.stderr)
+                stage_status["gen_ui"] = {"status": "failure", "error": error_message}
+                stage_status["sync_preview"] = {"status": "skipped", "reason": "gen_ui_failed"}
+                errors.append(f"gen_ui: {error_message}")
+                exit_code = 2
+            else:
+                _write_json_file(ui_report_out, ui_report.to_dict(), pretty=args.pretty)
+                generated_files.append(ui_report.tsx_file)
+                stage_status["gen_ui"] = {
+                    "status": "success",
+                    "report_file": str(ui_report_out),
+                    "tsx_file": ui_report.tsx_file,
+                    "total_nodes": ui_report.summary.total_nodes,
+                    "rendered_nodes": ui_report.summary.rendered_nodes,
+                }
+                warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
+
+                generated_screens_dir = Path(args.ui_out_dir).resolve() / "src" / "screens"
+                try:
+                    preview_report = sync_preview_host(
+                        generated_screens_dir=generated_screens_dir,
+                        preview_host_dir=args.preview_host_dir,
+                        manifest_file=args.manifest_file,
+                        registry_generated_file=args.registry_generated_file,
+                        pretty=args.pretty,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive path
+                    error_message = f"{type(exc).__name__}: {exc}"
+                    print(error_message, file=sys.stderr)
+                    stage_status["sync_preview"] = {
+                        "status": "failure",
+                        "error": error_message,
+                        "generated_screens_dir": str(generated_screens_dir),
+                    }
+                    errors.append(f"sync_preview: {error_message}")
+                    exit_code = 2
+                else:
+                    _write_json_file(
+                        preview_report_out,
+                        preview_report.to_dict(),
+                        pretty=args.pretty,
+                    )
+                    generated_files.extend(
+                        [preview_report.manifest_file, preview_report.registry_generated_file]
+                    )
+                    stage_status["sync_preview"] = {
+                        "status": "success",
+                        "report_file": str(preview_report_out),
+                        "manifest_file": preview_report.manifest_file,
+                        "registry_generated_file": preview_report.registry_generated_file,
+                        "generated_screen_count": preview_report.generated_screen_count,
+                        "generated_entry_modules": preview_report.generated_entry_modules,
+                    }
+                    warnings.extend(
+                        f"sync_preview: {message}" for message in preview_report.warnings
+                    )
+
+    summary = {
+        "generated_at_utc": datetime.now(UTC).isoformat(),
+        "command": MIGRATE_E2E_COMMAND_NAME,
+        "input_xml_path": str(xml_path),
+        "screen_id": screen_id,
+        "overall_status": "success" if exit_code == 0 else "failure",
+        "overall_exit_code": exit_code,
+        "reports": report_files,
+        "stages": stage_status,
+        "generated_file_references": _dedupe_preserve_order(generated_files),
+        "warnings": warnings,
+        "errors": errors,
+    }
+    _write_json_file(summary_out, summary, pretty=args.pretty)
+    return exit_code
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -405,6 +679,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_gen_ui(args)
         if args.command == "sync-preview":
             return run_sync_preview(args)
+        if args.command == MIGRATE_E2E_COMMAND_NAME:
+            return run_migrate_e2e(args)
     except ParseStrictError as exc:
         print(str(exc), file=sys.stderr)
         return 2

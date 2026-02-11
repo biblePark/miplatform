@@ -231,6 +231,115 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["summary"]["unsupported"], 0)
             self.assertEqual(payload["results"][0]["reason"], "missing_endpoint")
 
+    def test_migrate_e2e_success_writes_consolidated_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            out_dir = workspace / "out"
+            api_out_dir = workspace / "generated-api"
+            ui_out_dir = workspace / "generated-ui"
+            preview_host_dir = workspace / "preview-host"
+            preview_host_dir.mkdir(parents=True, exist_ok=True)
+
+            rc = main(
+                [
+                    "migrate-e2e",
+                    str(FIXTURE_XML),
+                    "--out-dir",
+                    str(out_dir),
+                    "--api-out-dir",
+                    str(api_out_dir),
+                    "--ui-out-dir",
+                    str(ui_out_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--strict",
+                    "--capture-text",
+                    "--known-tags-file",
+                    str(KNOWN_TAGS),
+                    "--known-attrs-file",
+                    str(KNOWN_ATTRS),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            summary_out = out_dir / "simple_screen_fixture.migration-summary.json"
+            self.assertTrue(summary_out.exists())
+            payload = json.loads(summary_out.read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["command"], "migrate-e2e")
+            self.assertEqual(payload["overall_status"], "success")
+            self.assertEqual(payload["overall_exit_code"], 0)
+            self.assertEqual(payload["stages"]["parse"]["status"], "success")
+            self.assertEqual(payload["stages"]["map_api"]["status"], "success")
+            self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
+            self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
+
+            reports = payload["reports"]
+            self.assertTrue(Path(reports["parse_report"]).exists())
+            self.assertTrue(Path(reports["map_api_report"]).exists())
+            self.assertTrue(Path(reports["gen_ui_report"]).exists())
+            self.assertTrue(Path(reports["preview_sync_report"]).exists())
+            self.assertEqual(Path(reports["consolidated_summary"]), summary_out.resolve())
+
+            generated_files = set(payload["generated_file_references"])
+            self.assertIn(str((api_out_dir / "src" / "routes" / "simple-screen-fixture.routes.js").resolve()), generated_files)
+            self.assertIn(str((api_out_dir / "src" / "services" / "simple-screen-fixture.service.js").resolve()), generated_files)
+            self.assertIn(str((ui_out_dir / "src" / "screens" / "simple-screen-fixture.tsx").resolve()), generated_files)
+            self.assertIn(
+                str((preview_host_dir / "src" / "manifest" / "screens.manifest.json").resolve()),
+                generated_files,
+            )
+            self.assertIn(
+                str((preview_host_dir / "src" / "screens" / "registry.generated.ts").resolve()),
+                generated_files,
+            )
+
+    def test_migrate_e2e_returns_failure_when_map_api_has_mapping_failures(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            xml_path = workspace / "broken.xml"
+            xml_path.write_text(
+                "<Screen id='Broken'><Transaction id='tx1' serviceid='SVC_TX1' method='POST' /></Screen>",
+                encoding="utf-8",
+            )
+
+            out_dir = workspace / "out"
+            api_out_dir = workspace / "generated-api"
+            ui_out_dir = workspace / "generated-ui"
+            preview_host_dir = workspace / "preview-host"
+            preview_host_dir.mkdir(parents=True, exist_ok=True)
+
+            rc = main(
+                [
+                    "migrate-e2e",
+                    str(xml_path),
+                    "--out-dir",
+                    str(out_dir),
+                    "--api-out-dir",
+                    str(api_out_dir),
+                    "--ui-out-dir",
+                    str(ui_out_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 2)
+            summary_out = out_dir / "broken.migration-summary.json"
+            self.assertTrue(summary_out.exists())
+            payload = json.loads(summary_out.read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["overall_status"], "failure")
+            self.assertEqual(payload["overall_exit_code"], 2)
+            self.assertEqual(payload["stages"]["parse"]["status"], "success")
+            self.assertEqual(payload["stages"]["map_api"]["status"], "failure")
+            self.assertEqual(payload["stages"]["map_api"]["mapped_failure"], 1)
+            self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
+            self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
+            self.assertIn("map_api: mapping failures detected (1)", payload["errors"])
+
     def test_gen_ui_generates_tsx_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             out_dir = Path(tmp_dir) / "generated-ui"
