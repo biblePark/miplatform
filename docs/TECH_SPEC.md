@@ -257,3 +257,35 @@ Aggregation behavior:
 - Parse-level failures still appear in `failures[]` and `failure_reason_counts`.
 - Summary remains backward-compatible for existing base fields:
 - `generated_at_utc`, `input_dir`, `out_dir`, `total_xml_files`, `reports_written`, `failures`.
+
+## 12) Runtime Behavior Wiring Contract (R08)
+
+Scope:
+
+- Generated UI screen modules and generated behavior store/actions must share deterministic file/import/hook naming.
+- Contract is computed from `screen_id` through `src/migrator/runtime_wiring.py` and reused by both codegen lanes.
+
+Deterministic naming contract:
+
+- Screen file stem: `to_file_stem(screen_id)`
+- Screen component name: `to_component_name(screen_id)`
+- Behavior store file: `<stem>.store.ts`
+- Behavior actions file: `<stem>.actions.ts`
+- UI -> store import: `../behavior/<stem>.store`
+- Store hook name: `use<PascalScreenId>BehaviorStore`
+- Store -> actions import: `./<stem>.actions`
+
+Event/action runtime contract:
+
+- Action names still follow duplicate-safe policy:
+- base action: event/transaction seed -> PascalCase
+- collisions: first keeps base name, later entries append numeric suffix (`<name>2`, `<name>3`, ...)
+- `gen-behavior-store` now emits event-to-action bindings:
+- `screenBehaviorEventActionBindings[]` in actions module
+- `event_action_bindings[]` in behavior report JSON
+- `gen-ui` uses the same planned bindings and wires supported XML `on*` events to React handler props on generated widget shells.
+
+Generation behavior update:
+
+- `gen-ui` now also emits deterministic behavior scaffolds under `src/behavior/` so generated screen imports are immediately resolvable.
+- `migrate-e2e` `gen_ui` stage metadata includes behavior file references and wired event binding counts.

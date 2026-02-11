@@ -7,17 +7,37 @@ from pathlib import Path
 import re
 from typing import Any
 
+from .behavior_store_codegen import (
+    BehaviorEventActionBinding,
+    generate_behavior_store_artifacts,
+)
 from .models import AstNode, ScreenIR, SourceRef
+from .runtime_wiring import RuntimeWiringContract, build_runtime_wiring_contract
 
-_NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
 _NUMERIC_VALUE_RE = re.compile(r"^-?\d+(\.\d+)?$")
+_NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
 _CONTAINER_TAGS = frozenset({"screen", "contents", "container"})
+_EVENT_ATTR_TO_REACT_PROP: dict[str, str] = {
+    "onclick": "onClick",
+    "ondblclick": "onDoubleClick",
+    "onchange": "onChange",
+    "oninput": "onInput",
+    "onfocus": "onFocus",
+    "onblur": "onBlur",
+    "onkeydown": "onKeyDown",
+    "onkeyup": "onKeyUp",
+    "onmousedown": "onMouseDown",
+    "onmouseup": "onMouseUp",
+    "onmouseenter": "onMouseEnter",
+    "onmouseleave": "onMouseLeave",
+}
 
 
 @dataclass(slots=True)
 class UiCodegenSummary:
     total_nodes: int
     rendered_nodes: int
+    wired_event_bindings: int
 
 
 @dataclass(slots=True)
@@ -26,6 +46,9 @@ class UiCodegenReport:
     input_xml_path: str
     component_name: str
     tsx_file: str
+    behavior_store_file: str
+    behavior_actions_file: str
+    wiring_contract: RuntimeWiringContract
     summary: UiCodegenSummary
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -42,24 +65,6 @@ def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
         if attr_key.lower() == key_lower:
             return value
     return None
-
-
-def _to_file_stem(raw: str) -> str:
-    chunks = [chunk.lower() for chunk in _NON_ALNUM.split(raw) if chunk]
-    return "-".join(chunks) if chunks else "screen"
-
-
-def _to_component_name(raw: str) -> str:
-    chunks = [chunk for chunk in _NON_ALNUM.split(raw) if chunk]
-    if not chunks:
-        return "GeneratedScreen"
-
-    component = "".join(chunk[:1].upper() + chunk[1:] for chunk in chunks)
-    if component[0].isdigit():
-        component = f"Screen{component}"
-    if component.lower().endswith("screen"):
-        return component
-    return f"{component}Screen"
 
 
 def _to_jsx_string(value: str) -> str:
@@ -171,6 +176,30 @@ def _trace_attributes(node: AstNode) -> list[str]:
     return attrs
 
 
+def _event_lookup_key(
+    *,
+    node_path: str,
+    event_name: str,
+    handler: str,
+) -> tuple[str, str, str]:
+    return (node_path, event_name.lower(), handler.strip())
+
+
+def _build_event_action_lookup(
+    event_action_bindings: list[BehaviorEventActionBinding],
+) -> dict[tuple[str, str, str], str]:
+    lookup: dict[tuple[str, str, str], str] = {}
+    for binding in event_action_bindings:
+        lookup[
+            _event_lookup_key(
+                node_path=binding.node_path,
+                event_name=binding.event_name,
+                handler=binding.handler,
+            )
+        ] = binding.action_name
+    return lookup
+
+
 def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[str]:
     indent = "  " * depth
     if widget_kind == "container":
@@ -181,7 +210,7 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         return [
             (
                 f'{indent}<Button className="mi-widget mi-widget-button" '
-                f"variant=\"contained\">{_to_jsx_string(label)}</Button>"
+                f'variant="contained">{_to_jsx_string(label)}</Button>'
             )
         ]
 
@@ -191,8 +220,8 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         return [
             (
                 f'{indent}<TextField className="mi-widget mi-widget-edit" '
-                f"size=\"small\" label={_to_jsx_string(label)} "
-                f"defaultValue={_to_jsx_string(default_value)} />"
+                f'size="small" label={_to_jsx_string(label)} '
+                f'defaultValue={_to_jsx_string(default_value)} />'
             )
         ]
 
@@ -201,7 +230,7 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         return [
             (
                 f'{indent}<Typography className="mi-widget mi-widget-static" '
-                f"variant=\"body2\">{_to_jsx_string(value)}</Typography>"
+                f'variant="body2">{_to_jsx_string(value)}</Typography>'
             )
         ]
 
@@ -258,6 +287,8 @@ def _render_node(
     *,
     depth: int,
     warnings: list[str],
+    event_action_lookup: dict[tuple[str, str, str], str],
+    behavior_store_var: str,
     is_root: bool = False,
 ) -> list[str]:
     indent = "  " * depth
@@ -272,21 +303,69 @@ def _render_node(
                 "rendered as fallback widget."
             )
         )
+
+    event_props: list[str] = []
+    for attr_name, attr_value in sorted(node.attributes.items(), key=lambda item: item[0].lower()):
+        attr_lower = attr_name.lower()
+        if not attr_lower.startswith("on") or len(attr_lower) <= 2:
+            continue
+
+        action_name = event_action_lookup.get(
+            _event_lookup_key(
+                node_path=node.source.node_path,
+                event_name=attr_lower,
+                handler=attr_value,
+            )
+        )
+        if action_name is None:
+            warnings.append(
+                (
+                    f"No behavior action binding resolved for event '{attr_name}' "
+                    f"at {node.source.node_path}; runtime handler not wired."
+                )
+            )
+            continue
+
+        trace_attrs.append(
+            f"data-mi-action-{_to_css_token(attr_lower)}={_to_jsx_string(action_name)}"
+        )
+        react_event_prop = _EVENT_ATTR_TO_REACT_PROP.get(attr_lower)
+        if react_event_prop is None:
+            warnings.append(
+                (
+                    f"No React event mapping for '{attr_name}' at {node.source.node_path}; "
+                    f"action '{action_name}' trace emitted only."
+                )
+            )
+            continue
+
+        event_props.append(f"{react_event_prop}={{{behavior_store_var}.{action_name}}}")
+
     style_attr = _style_attribute(_build_node_style(node, is_root=is_root))
     trace_payload = " ".join(trace_attrs)
+    event_payload = " ".join(event_props)
+    event_segment = f" {event_payload}" if event_payload else ""
 
     lines = [
         f"{indent}{{/* {_source_comment(node.source)} */}}",
         (
             f'{indent}<Box className="mi-widget-shell mi-widget-shell-{class_token}" '
             f"data-mi-widget={_to_jsx_string(widget_kind)} "
-            f"{trace_payload}{style_attr}>"
+            f"{trace_payload}{event_segment}{style_attr}>"
         ),
     ]
 
     lines.extend(_render_widget_body(node, widget_kind=widget_kind, depth=depth + 1))
     for child in node.children:
-        lines.extend(_render_node(child, depth=depth + 1, warnings=warnings))
+        lines.extend(
+            _render_node(
+                child,
+                depth=depth + 1,
+                warnings=warnings,
+                event_action_lookup=event_action_lookup,
+                behavior_store_var=behavior_store_var,
+            )
+        )
     lines.append(f"{indent}</Box>")
     return lines
 
@@ -300,23 +379,36 @@ def _count_nodes(node: AstNode) -> int:
 
 def _render_screen_component(
     screen: ScreenIR,
-    component_name: str,
     *,
+    wiring_contract: RuntimeWiringContract,
     warnings: list[str],
+    event_action_lookup: dict[tuple[str, str, str], str],
 ) -> str:
     root = screen.root
     header_source_file = _escape_comment(root.source.file_path)
     header_source_node = _escape_comment(root.source.node_path)
+    behavior_store_var = "behaviorStore"
 
     lines = [
         "/* Generated by mifl-migrator gen-ui. */",
         f"/* sourceXmlPath: {header_source_file} */",
         f"/* sourceNodePath: {header_source_node} */",
+        (
+            "/* runtimeWiring: "
+            f"storeHook={wiring_contract.behavior_store_hook_name} "
+            f"storeImport={wiring_contract.behavior_store_import_from_screen} */"
+        ),
         "",
         'import type { JSX } from "react";',
         'import { Box, Button, FormControl, InputLabel, MenuItem, Select, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, TextField, Typography } from "@mui/material";',
+        (
+            f'import {{ {wiring_contract.behavior_store_hook_name} }} '
+            f'from "{wiring_contract.behavior_store_import_from_screen}";'
+        ),
         "",
-        f"export default function {component_name}(): JSX.Element {{",
+        f"export default function {wiring_contract.screen_component_name}(): JSX.Element {{",
+        f"  const {behavior_store_var} = {wiring_contract.behavior_store_hook_name}();",
+        "",
         "  return (",
         (
             '    <section className="mi-generated-screen" '
@@ -325,7 +417,16 @@ def _render_screen_component(
             f"data-mi-source-file={_to_jsx_string(root.source.file_path)}>"
         ),
     ]
-    lines.extend(_render_node(root, depth=3, warnings=warnings, is_root=True))
+    lines.extend(
+        _render_node(
+            root,
+            depth=3,
+            warnings=warnings,
+            event_action_lookup=event_action_lookup,
+            behavior_store_var=behavior_store_var,
+            is_root=True,
+        )
+    )
     lines.extend(
         [
             "    </section>",
@@ -344,14 +445,26 @@ def generate_ui_codegen_artifacts(
     out_dir: str | Path,
 ) -> UiCodegenReport:
     out_root = Path(out_dir).resolve()
-    screen_stem = _to_file_stem(screen.screen_id)
-    component_name = _to_component_name(screen.screen_id)
-    tsx_path = out_root / "src" / "screens" / f"{screen_stem}.tsx"
+    wiring_contract = build_runtime_wiring_contract(screen.screen_id)
+    tsx_path = out_root / "src" / "screens" / f"{wiring_contract.screen_file_stem}.tsx"
     tsx_path.parent.mkdir(parents=True, exist_ok=True)
+
+    behavior_report = generate_behavior_store_artifacts(
+        screen=screen,
+        input_xml_path=input_xml_path,
+        out_dir=out_root,
+    )
 
     warnings: list[str] = []
     tsx_path.write_text(
-        _render_screen_component(screen, component_name, warnings=warnings),
+        _render_screen_component(
+            screen,
+            wiring_contract=wiring_contract,
+            warnings=warnings,
+            event_action_lookup=_build_event_action_lookup(
+                behavior_report.event_action_bindings
+            ),
+        ),
         encoding="utf-8",
     )
 
@@ -362,9 +475,16 @@ def generate_ui_codegen_artifacts(
     return UiCodegenReport(
         screen_id=screen.screen_id,
         input_xml_path=str(Path(input_xml_path).resolve()),
-        component_name=component_name,
+        component_name=wiring_contract.screen_component_name,
         tsx_file=str(tsx_path),
-        summary=UiCodegenSummary(total_nodes=total_nodes, rendered_nodes=total_nodes),
+        behavior_store_file=behavior_report.store_file,
+        behavior_actions_file=behavior_report.actions_file,
+        wiring_contract=wiring_contract,
+        summary=UiCodegenSummary(
+            total_nodes=total_nodes,
+            rendered_nodes=total_nodes,
+            wired_event_bindings=len(behavior_report.event_action_bindings),
+        ),
         warnings=warnings,
     )
 

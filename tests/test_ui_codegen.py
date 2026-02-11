@@ -8,7 +8,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from migrator.models import AstNode, ScreenIR, SourceRef  # noqa: E402
+from migrator.models import AstNode, EventIR, ScreenIR, SourceRef  # noqa: E402
 from migrator.parser import parse_xml_file  # noqa: E402
 from migrator.ui_codegen import generate_ui_codegen_artifacts  # noqa: E402
 
@@ -30,22 +30,41 @@ class TestUiCodegen(unittest.TestCase):
             )
 
             tsx_path = out_dir / "src" / "screens" / "simple-screen-fixture.tsx"
+            store_path = out_dir / "src" / "behavior" / "simple-screen-fixture.store.ts"
+            actions_path = out_dir / "src" / "behavior" / "simple-screen-fixture.actions.ts"
+
             self.assertEqual(Path(report.tsx_file), tsx_path.resolve())
+            self.assertEqual(Path(report.behavior_store_file), store_path.resolve())
+            self.assertEqual(Path(report.behavior_actions_file), actions_path.resolve())
             self.assertTrue(tsx_path.exists())
+            self.assertTrue(store_path.exists())
+            self.assertTrue(actions_path.exists())
             self.assertEqual(report.component_name, "SimpleScreenFixtureScreen")
+            self.assertEqual(
+                report.wiring_contract.behavior_store_hook_name,
+                "useSimpleScreenFixtureBehaviorStore",
+            )
             self.assertGreater(report.summary.total_nodes, 0)
             self.assertEqual(report.summary.total_nodes, report.summary.rendered_nodes)
+            self.assertEqual(report.summary.wired_event_bindings, 1)
 
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("export default function SimpleScreenFixtureScreen", tsx_text)
             self.assertIn('from "@mui/material"', tsx_text)
+            self.assertIn(
+                'import { useSimpleScreenFixtureBehaviorStore } from "../behavior/simple-screen-fixture.store";',
+                tsx_text,
+            )
+            self.assertIn("const behaviorStore = useSimpleScreenFixtureBehaviorStore();", tsx_text)
             self.assertIn('className="mi-generated-screen"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-button"', tsx_text)
             self.assertIn('data-mi-widget={"button"}', tsx_text)
+            self.assertIn('onClick={behaviorStore.onFnSearch}', tsx_text)
             self.assertIn(
                 'data-mi-source-node={"/Screen[1]/Contents[1]/Button[1]"}',
                 tsx_text,
             )
+            self.assertIn('data-mi-action-onclick={"onFnSearch"}', tsx_text)
             self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
 
     def test_generate_ui_codegen_artifacts_warns_for_minimal_screen(self) -> None:
@@ -110,6 +129,92 @@ class TestUiCodegen(unittest.TestCase):
                 ),
                 report.warnings,
             )
+
+    def test_generate_ui_codegen_artifacts_wires_duplicate_safe_event_actions(self) -> None:
+        screen = ScreenIR(
+            screen_id="Duplicate Wiring",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "DuplicateWiring"},
+                text=None,
+                source=SourceRef(file_path="dup.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="dup.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Button",
+                                attributes={"id": "btnSave", "text": "Save", "onclick": "fnSave"},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="dup.xml",
+                                    node_path="/Screen[1]/Contents[1]/Button[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Button",
+                                attributes={"id": "btnSave2", "text": "Save2", "onclick": "fnSave();"},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="dup.xml",
+                                    node_path="/Screen[1]/Contents[1]/Button[2]",
+                                    line=4,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnSave",
+                    event_name="onclick",
+                    handler="fnSave",
+                    source=SourceRef(
+                        file_path="dup.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnSave2",
+                    event_name="onclick",
+                    handler="fnSave();",
+                    source=SourceRef(
+                        file_path="dup.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[2]",
+                        line=4,
+                    ),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="dup.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('onClick={behaviorStore.onFnSave}', tsx_text)
+            self.assertIn('onClick={behaviorStore.onFnSave2}', tsx_text)
+            self.assertIn('data-mi-action-onclick={"onFnSave"}', tsx_text)
+            self.assertIn('data-mi-action-onclick={"onFnSave2"}', tsx_text)
+            self.assertEqual(report.summary.wired_event_bindings, 2)
 
 
 if __name__ == "__main__":

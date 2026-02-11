@@ -50,7 +50,7 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
-하나의 XML 기준으로 `parse -> map-api -> gen-ui -> sync-preview`를 한 번에 실행합니다.
+하나의 XML 기준으로 `parse -> map-api -> gen-ui -> sync-preview`를 한 번에 실행합니다. (`gen-ui` 단계에서 behavior store/actions wiring 산출물도 함께 생성)
 
 ```bash
 PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
@@ -72,6 +72,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 - 생성 코드:
 - API 스텁: `generated/api/src/routes`, `generated/api/src/services`
 - UI 화면: `generated/frontend/src/screens`
+- UI behavior wiring: `generated/frontend/src/behavior/*.store.ts`, `generated/frontend/src/behavior/*.actions.ts`
 - Preview 동기화: `preview-host/src/manifest/screens.manifest.json`, `preview-host/src/screens/registry.generated.ts`
 
 확인 포인트:
@@ -134,7 +135,7 @@ PYTHONPATH=src python3 -m migrator map-api data/input/xml/<파일명>.xml \
 - 라우트/서비스 스텁: `out/generated-api/src/routes`, `out/generated-api/src/services`
 - 매핑 보고서: `out/map-api-<파일명>.json`
 
-### 4.5 UI TSX 스캐폴드 생성 (R06)
+### 4.5 UI TSX 스캐폴드 생성 (R06/R08)
 
 ```bash
 PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
@@ -150,7 +151,23 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 산출물:
 
 - 생성 컴포넌트: `generated/frontend/src/screens/*.tsx`
+- behavior wiring 스캐폴드: `generated/frontend/src/behavior/*.store.ts`, `generated/frontend/src/behavior/*.actions.ts`
 - 코드젠 보고서: `out/gen-ui-<파일명>.json`
+
+### 4.5.1 Behavior 스캐폴드만 재생성 (선택)
+
+behavior 파일만 별도로 다시 만들고 싶다면 아래 명령을 사용합니다.
+
+```bash
+PYTHONPATH=src python3 -m migrator gen-behavior-store data/input/xml/<파일명>.xml \
+  --out-dir generated/frontend \
+  --report-out out/gen-behavior-store-<파일명>.json \
+  --strict \
+  --capture-text \
+  --known-tags-file data/input/profiles/known_tags.txt \
+  --known-attrs-file data/input/profiles/known_attrs.json \
+  --pretty
+```
 
 ### 4.6 Preview Host 동기화 (R06)
 
@@ -218,6 +235,6 @@ npm run build
 1. XML 입력 배치 (`data/input/xml`)
 2. `migrate-e2e` 실행으로 전체 파이프라인 1회 수행
 3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
-4. 필요 시 `batch-parse` 또는 개별 명령(`parse`/`map-api`/`gen-ui`/`sync-preview`)로 세부 점검
+4. 필요 시 `batch-parse` 또는 개별 명령(`parse`/`map-api`/`gen-ui`/`gen-behavior-store`/`sync-preview`)로 세부 점검
 5. `preview-host`에서 `npm run dev`로 육안 확인
 6. `preview-host`에서 `npm run build` 최종 확인

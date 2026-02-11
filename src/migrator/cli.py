@@ -634,13 +634,23 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                 exit_code = 2
             else:
                 _write_json_file(ui_report_out, ui_report.to_dict(), pretty=args.pretty)
-                generated_files.append(ui_report.tsx_file)
+                generated_files.extend(
+                    [
+                        ui_report.tsx_file,
+                        ui_report.behavior_store_file,
+                        ui_report.behavior_actions_file,
+                    ]
+                )
                 stage_status["gen_ui"] = {
                     "status": "success",
                     "report_file": str(ui_report_out),
                     "tsx_file": ui_report.tsx_file,
+                    "behavior_store_file": ui_report.behavior_store_file,
+                    "behavior_actions_file": ui_report.behavior_actions_file,
+                    "behavior_store_hook": ui_report.wiring_contract.behavior_store_hook_name,
                     "total_nodes": ui_report.summary.total_nodes,
                     "rendered_nodes": ui_report.summary.rendered_nodes,
+                    "wired_event_bindings": ui_report.summary.wired_event_bindings,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
 
