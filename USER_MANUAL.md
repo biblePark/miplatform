@@ -81,7 +81,51 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 - `stages`별 상태(`parse`, `map_api`, `gen_ui`, `sync_preview`)
 - `generated_file_references` 목록
 
-### 4.2 단일 XML 파싱 검증
+### 4.2 실샘플 E2E 회귀 실행 (R08)
+
+합의된 실샘플 XML 세트 전체를 대상으로 `migrate-e2e`를 반복 실행하고, 추출/매핑/정합성(fidelity) 위험 추세를 통합 리포트로 생성합니다.
+
+```bash
+PYTHONPATH=src python3 scripts/run_real_sample_e2e_regression.py \
+  --samples-dir data/input/xml \
+  --recursive \
+  --out-dir out/real-sample-e2e-regression \
+  --strict \
+  --capture-text \
+  --known-tags-file data/input/profiles/known_tags.txt \
+  --known-attrs-file data/input/profiles/known_attrs.json \
+  --pretty
+```
+
+`--samples-dir` 대신 `--sample-list-file`을 사용하면 합의된 파일 목록만 실행할 수 있습니다.
+
+```bash
+PYTHONPATH=src python3 scripts/run_real_sample_e2e_regression.py \
+  --sample-list-file data/input/profiles/real_sample_set.txt \
+  --out-dir out/real-sample-e2e-regression \
+  --strict \
+  --capture-text \
+  --known-tags-file data/input/profiles/known_tags.txt \
+  --known-attrs-file data/input/profiles/known_attrs.json \
+  --pretty
+```
+
+주요 산출물:
+
+- 통합 JSON 리포트: `out/real-sample-e2e-regression/regression-summary.json`
+- 통합 Markdown 리포트: `out/real-sample-e2e-regression/regression-summary.md`
+- 샘플별 실행 결과: `out/real-sample-e2e-regression/runs/<순번>-<xml-stem>/`
+- 샘플별 단계 리포트: `.../reports/<xml-stem>.*-report.json`, `.../reports/<xml-stem>.migration-summary.json`
+
+확인 포인트:
+
+- 전체 성공/실패 건수: `totals.success_count`, `totals.failure_count`
+- 단계별 실패 현황: `stage_status_counts`, `stage_failure_details`
+- 상위 경고: `top_warnings`
+- 위험 추세: `risk_trends.extraction`, `risk_trends.mapping`, `risk_trends.fidelity`
+- 미해결 XML 파싱 차단 이슈: `malformed_xml_blockers`
+
+### 4.3 단일 XML 파싱 검증
 
 ```bash
 PYTHONPATH=src python3 -m migrator parse data/input/xml/<파일명>.xml \
@@ -98,7 +142,7 @@ PYTHONPATH=src python3 -m migrator parse data/input/xml/<파일명>.xml \
 - `out/parse-<파일명>.json` 생성 여부
 - `gates` 항목이 모두 `passed=true`인지
 
-### 4.3 다수 XML 일괄 파싱
+### 4.4 다수 XML 일괄 파싱
 
 ```bash
 PYTHONPATH=src python3 -m migrator batch-parse data/input/xml \
@@ -117,7 +161,7 @@ PYTHONPATH=src python3 -m migrator batch-parse data/input/xml \
 - `out/batch-summary.json`의 `failures`, `gate_pass_fail_counts`
 - 개별 리포트: `out/batch-reports/*.json`
 
-### 4.4 API 스캐폴드 생성
+### 4.5 API 스캐폴드 생성
 
 ```bash
 PYTHONPATH=src python3 -m migrator map-api data/input/xml/<파일명>.xml \
@@ -135,7 +179,7 @@ PYTHONPATH=src python3 -m migrator map-api data/input/xml/<파일명>.xml \
 - 라우트/서비스 스텁: `out/generated-api/src/routes`, `out/generated-api/src/services`
 - 매핑 보고서: `out/map-api-<파일명>.json`
 
-### 4.5 UI TSX 스캐폴드 생성 (R06/R08)
+### 4.6 UI TSX 스캐폴드 생성 (R06)
 
 ```bash
 PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
@@ -154,7 +198,7 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 - behavior wiring 스캐폴드: `generated/frontend/src/behavior/*.store.ts`, `generated/frontend/src/behavior/*.actions.ts`
 - 코드젠 보고서: `out/gen-ui-<파일명>.json`
 
-### 4.5.1 Behavior 스캐폴드만 재생성 (선택)
+### 4.6.1 Behavior 스캐폴드만 재생성 (선택)
 
 behavior 파일만 별도로 다시 만들고 싶다면 아래 명령을 사용합니다.
 
@@ -169,7 +213,7 @@ PYTHONPATH=src python3 -m migrator gen-behavior-store data/input/xml/<파일명>
   --pretty
 ```
 
-### 4.6 Preview Host 동기화 (R06)
+### 4.7 Preview Host 동기화 (R06)
 
 UI 생성 결과를 브라우저에서 열 수 있도록 manifest/registry를 동기화합니다.
 
@@ -235,6 +279,7 @@ npm run build
 1. XML 입력 배치 (`data/input/xml`)
 2. `migrate-e2e` 실행으로 전체 파이프라인 1회 수행
 3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
-4. 필요 시 `batch-parse` 또는 개별 명령(`parse`/`map-api`/`gen-ui`/`gen-behavior-store`/`sync-preview`)로 세부 점검
-5. `preview-host`에서 `npm run dev`로 육안 확인
-6. `preview-host`에서 `npm run build` 최종 확인
+4. `run_real_sample_e2e_regression.py`로 실샘플 회귀 실행
+5. `out/real-sample-e2e-regression/regression-summary.json`에서 실패/위험 추세 확인
+6. `preview-host`에서 `npm run dev`로 육안 확인
+7. `preview-host`에서 `npm run build` 최종 확인

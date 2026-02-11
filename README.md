@@ -38,7 +38,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 5: API mapping scaffold + preview host scaffold + batch summary aggregation.
 - Round 6: UI TSX scaffold generation + preview manifest/registry sync.
 - Round 7: One-command end-to-end migration orchestration with consolidated summary report.
-- Round 8: Runtime wiring contract between generated UI screens and generated behavior store/actions.
+- Round 8: Runtime wiring contract + real-sample migrate-e2e regression automation with extraction/mapping/fidelity risk trend reporting.
 
 ## Quick Start
 
@@ -84,6 +84,19 @@ This command executes parse/map-api/gen-ui/sync-preview in sequence and writes:
 - Generated UI stage outputs: `src/screens/*.tsx` plus deterministic runtime-wired `src/behavior/*.store.ts` and `src/behavior/*.actions.ts`
 - Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
 - Summary includes stage statuses, report file references, and generated file references for verification
+
+Run real-sample migrate-e2e regression across a sample set:
+
+```bash
+PYTHONPATH=src python3 scripts/run_real_sample_e2e_regression.py --samples-dir data/input/xml --recursive --out-dir out/real-sample-e2e-regression --strict --capture-text --known-tags-file data/input/profiles/known_tags.txt --known-attrs-file data/input/profiles/known_attrs.json --pretty
+```
+
+This command runs `migrate-e2e` for each XML in the sample set and writes:
+
+- Consolidated regression summary JSON: `out/real-sample-e2e-regression/regression-summary.json`
+- Consolidated regression summary Markdown: `out/real-sample-e2e-regression/regression-summary.md`
+- Per-sample stage reports and generated artifacts under `out/real-sample-e2e-regression/runs/<index>-<xml-stem>/`
+- Summary includes success/failure totals, stage-level failure counts/details, top warnings, extraction/mapping/fidelity risk trends, and unresolved malformed/XML blockers
 
 Sync generated UI screens into preview-host manifest + registry:
 
@@ -167,6 +180,7 @@ scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 - Preview manifest/registry sync utility under `src/migrator/preview_sync.py`.
 - End-to-end orchestration CLI (`migrate-e2e`) with consolidated migration summary report.
 - Deterministic runtime wiring contract module (`src/migrator/runtime_wiring.py`) used by both `gen-ui` and `gen-behavior-store`.
+- Real-sample regression runner (`scripts/run_real_sample_e2e_regression.py`) with consolidated risk trend reporting.
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.
