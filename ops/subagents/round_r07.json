@@ -1,0 +1,56 @@
+{
+  "round_id": "R07",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "cd preview-host && npm run build"
+  ],
+  "lanes": [
+    {
+      "name": "ui-widget-materialization",
+      "branch_name": "codex/r07-ui-widget-materialization",
+      "worktree_path": "/tmp/miflatform-r07-ui-widget-materialization",
+      "objective": "Upgrade UI codegen output to render core MIPLATFORM tags with deterministic React+MUI widget mappings and source trace attributes.",
+      "deliverables": [
+        "Extend src/migrator/ui_codegen.py with core widget mapping policy (Button/Edit/Static/Combo/Grid/Container)",
+        "Keep deterministic naming/output and source trace metadata in generated TSX",
+        "Add unit tests validating mapped JSX output for representative fixture screens",
+        "Document mapping limitations and fallback policy in lane handoff"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "behavior-store-scaffold",
+      "branch_name": "codex/r07-behavior-store-scaffold",
+      "worktree_path": "/tmp/miflatform-r07-behavior-store-scaffold",
+      "objective": "Generate Zustand state/action scaffolds from extracted bindings/events/transactions so generated UI has deterministic behavior integration anchors.",
+      "deliverables": [
+        "Add behavior/store codegen module under src/migrator/ (no runtime side effects)",
+        "Generate per-screen store/action scaffold artifacts with deterministic file names",
+        "Add tests for event/transaction to action naming and duplicate handling policy",
+        "Document assumptions and unresolved runtime coupling risks in lane handoff"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "pipeline-e2e-automation",
+      "branch_name": "codex/r07-pipeline-e2e-automation",
+      "worktree_path": "/tmp/miflatform-r07-pipeline-e2e-automation",
+      "objective": "Provide one-command migration execution flow that orchestrates parse/codegen/map-api/preview-sync and emits a consolidated report for user verification.",
+      "deliverables": [
+        "Add CLI command for end-to-end migration orchestration (single screen scope minimum)",
+        "Emit consolidated migration summary/report JSON with generated file references",
+        "Add CLI/integration tests for success and failure paths",
+        "Update USER_MANUAL.md and README.md to reflect the new user workflow"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    }
+  ]
+}
