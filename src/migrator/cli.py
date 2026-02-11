@@ -8,6 +8,7 @@ from pathlib import Path
 import sys
 
 from .api_mapping import generate_api_mapping_artifacts
+from .behavior_store_codegen import generate_behavior_store_artifacts
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
 from .ui_codegen import generate_ui_codegen_artifacts
@@ -218,6 +219,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(gen_ui_cmd)
     gen_ui_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    gen_behavior_store_cmd = subparsers.add_parser(
+        "gen-behavior-store",
+        help="Generate Zustand behavior store/action scaffolds from ScreenIR events/bindings/transactions",
+    )
+    gen_behavior_store_cmd.add_argument("xml_path", help="Path to source XML file")
+    gen_behavior_store_cmd.add_argument(
+        "--out-dir",
+        required=True,
+        help="Directory where generated behavior scaffold files are written",
+    )
+    gen_behavior_store_cmd.add_argument(
+        "--report-out",
+        required=True,
+        help="Output path for behavior store codegen report JSON",
+    )
+    _add_common_parse_options(gen_behavior_store_cmd)
+    gen_behavior_store_cmd.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON outputs",
+    )
+
     sync_preview_cmd = subparsers.add_parser(
         "sync-preview",
         help="Sync preview-host manifest/registry with generated screen modules",
@@ -376,6 +399,20 @@ def run_gen_ui(args: argparse.Namespace) -> int:
     _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
     return 0
 
+
+def run_gen_behavior_store(args: argparse.Namespace) -> int:
+    config = _build_parse_config(args)
+    report = parse_xml_file(args.xml_path, config=config)
+    behavior_report = generate_behavior_store_artifacts(
+        screen=report.screen,
+        input_xml_path=args.xml_path,
+        out_dir=args.out_dir,
+    )
+    report_out = Path(args.report_out).resolve()
+    _write_json_file(report_out, behavior_report.to_dict(), pretty=args.pretty)
+    return 0
+
+
 def run_sync_preview(args: argparse.Namespace) -> int:
     report = sync_preview_host(
         generated_screens_dir=args.generated_screens_dir,
@@ -403,6 +440,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_map_api(args)
         if args.command == "gen-ui":
             return run_gen_ui(args)
+        if args.command == "gen-behavior-store":
+            return run_gen_behavior_store(args)
         if args.command == "sync-preview":
             return run_sync_preview(args)
     except ParseStrictError as exc:
