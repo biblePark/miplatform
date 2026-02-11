@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from pathlib import Path
+import re
 import xml.etree.ElementTree as ET
 
 from .models import (
@@ -32,6 +33,115 @@ from .validator import (
 
 class ParseStrictError(RuntimeError):
     """Raised when strict parse gates fail."""
+
+
+SCRIPT_TX_CALL_RE = re.compile(r"(?i)\btransaction\s*\(")
+
+
+def _extract_string_literal(value: str) -> str | None:
+    candidate = value.strip()
+    if len(candidate) < 2:
+        return None
+
+    quote = candidate[0]
+    if quote not in {"\"", "'"} or candidate[-1] != quote:
+        return None
+
+    body = candidate[1:-1]
+    return body.replace(f"\\{quote}", quote).replace("\\\\", "\\")
+
+
+def _split_top_level_args(raw: str) -> list[str]:
+    args: list[str] = []
+    current: list[str] = []
+    depth = 0
+    quote: str | None = None
+    escaped = False
+
+    for ch in raw:
+        if quote is not None:
+            current.append(ch)
+            if escaped:
+                escaped = False
+                continue
+            if ch == "\\":
+                escaped = True
+                continue
+            if ch == quote:
+                quote = None
+            continue
+
+        if ch in {"\"", "'"}:
+            quote = ch
+            current.append(ch)
+            continue
+
+        if ch == "(":
+            depth += 1
+            current.append(ch)
+            continue
+
+        if ch == ")":
+            depth = max(0, depth - 1)
+            current.append(ch)
+            continue
+
+        if ch == "," and depth == 0:
+            args.append("".join(current).strip())
+            current = []
+            continue
+
+        current.append(ch)
+
+    tail = "".join(current).strip()
+    if tail:
+        args.append(tail)
+    return args
+
+
+def _iter_script_transaction_call_args(script_body: str):
+    cursor = 0
+    while True:
+        match = SCRIPT_TX_CALL_RE.search(script_body, cursor)
+        if not match:
+            return
+
+        start = match.end()
+        depth = 1
+        i = start
+        quote: str | None = None
+        escaped = False
+
+        while i < len(script_body) and depth > 0:
+            ch = script_body[i]
+            if quote is not None:
+                if escaped:
+                    escaped = False
+                elif ch == "\\":
+                    escaped = True
+                elif ch == quote:
+                    quote = None
+                i += 1
+                continue
+
+            if ch in {"\"", "'"}:
+                quote = ch
+                i += 1
+                continue
+
+            if ch == "(":
+                depth += 1
+            elif ch == ")":
+                depth -= 1
+            i += 1
+
+        if depth != 0:
+            return
+
+        args_body = script_body[start : i - 1]
+        args = _split_top_level_args(args_body)
+        yield args
+        cursor = i
 
 
 def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
@@ -172,6 +282,34 @@ def _extract_script(node: AstNode) -> ScriptBlockIR:
     )
 
 
+def _extract_script_transactions(script: ScriptBlockIR) -> list[TransactionIR]:
+    if not script.body:
+        return []
+
+    extracted: list[TransactionIR] = []
+    for args in _iter_script_transaction_call_args(script.body):
+        if len(args) < 2:
+            continue
+
+        tx_id = _extract_string_literal(args[0]) or script.script_name
+        endpoint = _extract_string_literal(args[1])
+        if endpoint is None:
+            continue
+
+        extracted.append(
+            TransactionIR(
+                node_tag="ScriptTransactionCall",
+                node_id=script.node_id,
+                transaction_id=tx_id,
+                endpoint=endpoint,
+                method="POST",
+                source=script.source,
+            )
+        )
+
+    return extracted
+
+
 def _extract_entities(
     ast_root: AstNode,
 ) -> tuple[
@@ -196,6 +334,7 @@ def _extract_entities(
     event_points_found = 0
     transaction_points_found = 0
     script_points_found = 0
+    script_call_transactions_found = 0
 
     for node in _iter_nodes(ast_root):
         node_id = _attr_lookup(node.attributes, "id")
@@ -251,7 +390,11 @@ def _extract_entities(
 
         if _is_script_node(node):
             script_points_found += 1
-            scripts.append(_extract_script(node))
+            script = _extract_script(node)
+            scripts.append(script)
+            script_transactions = _extract_script_transactions(script)
+            script_call_transactions_found += len(script_transactions)
+            transactions.extend(script_transactions)
 
     return (
         datasets,
@@ -262,7 +405,7 @@ def _extract_entities(
         dataset_nodes_found,
         binding_points_found,
         event_points_found,
-        transaction_points_found,
+        transaction_points_found + script_call_transactions_found,
         script_points_found,
     )
 

@@ -171,5 +171,38 @@ class TestParser(unittest.TestCase):
         self.assertEqual(report.screen.transactions[0].method, "GET")
 
 
+    def test_extracts_transactions_from_script_calls(self) -> None:
+        xml_payload = """<?xml version='1.0' encoding='UTF-8'?>
+<Screen id='ScriptTxSample'>
+  <Script name='fnLoad'>
+    transaction("select", "commonsearch::searchBasCd.jsp", "", "", "");
+    Transaction("PosRun", "http://example.com/pos/Platform.jsp", "in=ds", "out=ds", "", "cb");
+    transaction("onlyOneArg");
+  </Script>
+</Screen>
+"""
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "script_tx_sample.xml"
+            xml_file.write_text(xml_payload, encoding="utf-8")
+            report = parse_xml_file(xml_file, config=ParseConfig(capture_text=True))
+
+        self.assertEqual(len(report.screen.transactions), 2)
+
+        tx1 = report.screen.transactions[0]
+        tx2 = report.screen.transactions[1]
+
+        self.assertEqual(tx1.node_tag, "ScriptTransactionCall")
+        self.assertEqual(tx1.transaction_id, "select")
+        self.assertEqual(tx1.endpoint, "commonsearch::searchBasCd.jsp")
+        self.assertEqual(tx1.method, "POST")
+
+        self.assertEqual(tx2.node_tag, "ScriptTransactionCall")
+        self.assertEqual(tx2.transaction_id, "PosRun")
+        self.assertEqual(tx2.endpoint, "http://example.com/pos/Platform.jsp")
+        self.assertEqual(tx2.method, "POST")
+
+
+
 if __name__ == "__main__":
     unittest.main()
