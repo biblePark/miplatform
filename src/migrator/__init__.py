@@ -9,6 +9,7 @@ from .preview_manifest import (
     load_screens_manifest,
     load_screens_manifest_file,
 )
+from .ui_codegen import UiCodegenReport, UiCodegenSummary, generate_ui_codegen_artifacts
 from .validator import (
     compute_canonical_hash_pair,
     compute_roundtrip_mismatches,
@@ -22,9 +23,12 @@ __all__ = [
     "ManifestContractError",
     "ScreenManifestEntry",
     "ScreensManifest",
+    "UiCodegenReport",
+    "UiCodegenSummary",
     "compute_canonical_hash_pair",
     "compute_roundtrip_mismatches",
     "compute_roundtrip_structural_diff",
+    "generate_ui_codegen_artifacts",
     "load_screens_manifest",
     "load_screens_manifest_file",
     "parse_xml_file",

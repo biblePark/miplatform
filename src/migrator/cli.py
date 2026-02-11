@@ -10,6 +10,7 @@ import sys
 from .api_mapping import generate_api_mapping_artifacts
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
+from .ui_codegen import generate_ui_codegen_artifacts
 
 STRICT_GATE_FAILURE_PREFIX = "Strict parse failed for gates:"
 XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
@@ -198,6 +199,24 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(map_api_cmd)
     map_api_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    gen_ui_cmd = subparsers.add_parser(
+        "gen-ui",
+        help="Generate first-pass React TSX screen scaffold from parsed ScreenIR",
+    )
+    gen_ui_cmd.add_argument("xml_path", help="Path to source XML file")
+    gen_ui_cmd.add_argument(
+        "--out-dir",
+        required=True,
+        help="Directory where generated TSX screen files are written",
+    )
+    gen_ui_cmd.add_argument(
+        "--report-out",
+        required=True,
+        help="Output path for UI codegen report JSON",
+    )
+    _add_common_parse_options(gen_ui_cmd)
+    gen_ui_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
+
     return parser
 
 
@@ -316,6 +335,19 @@ def run_map_api(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_gen_ui(args: argparse.Namespace) -> int:
+    config = _build_parse_config(args)
+    report = parse_xml_file(args.xml_path, config=config)
+    ui_report = generate_ui_codegen_artifacts(
+        screen=report.screen,
+        input_xml_path=args.xml_path,
+        out_dir=args.out_dir,
+    )
+    report_out = Path(args.report_out).resolve()
+    _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -327,6 +359,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_batch_parse(args)
         if args.command == "map-api":
             return run_map_api(args)
+        if args.command == "gen-ui":
+            return run_gen_ui(args)
     except ParseStrictError as exc:
         print(str(exc), file=sys.stderr)
         return 2

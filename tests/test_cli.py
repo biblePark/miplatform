@@ -231,6 +231,52 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["summary"]["unsupported"], 0)
             self.assertEqual(payload["results"][0]["reason"], "missing_endpoint")
 
+    def test_gen_ui_generates_tsx_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report_out = Path(tmp_dir) / "ui-report.json"
+            rc = main(
+                [
+                    "gen-ui",
+                    str(FIXTURE_XML),
+                    "--out-dir",
+                    str(out_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--strict",
+                    "--capture-text",
+                    "--known-tags-file",
+                    str(KNOWN_TAGS),
+                    "--known-attrs-file",
+                    str(KNOWN_ATTRS),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(report_out.exists())
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["screen_id"], "simple_screen_fixture")
+            self.assertEqual(payload["component_name"], "SimpleScreenFixtureScreen")
+            self.assertEqual(
+                Path(payload["tsx_file"]).name,
+                "simple-screen-fixture.tsx",
+            )
+            self.assertGreater(payload["summary"]["total_nodes"], 0)
+            self.assertEqual(
+                payload["summary"]["total_nodes"],
+                payload["summary"]["rendered_nodes"],
+            )
+
+            tsx_path = Path(payload["tsx_file"])
+            self.assertTrue(tsx_path.exists())
+            tsx_text = tsx_path.read_text(encoding="utf-8")
+            self.assertIn(
+                'data-mi-source-node={"/Screen[1]/Contents[1]/Button[1]"}',
+                tsx_text,
+            )
+            self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
+
 
 if __name__ == "__main__":
     unittest.main()
