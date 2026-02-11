@@ -1,0 +1,54 @@
+{
+  "round_id": "R05",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+  ],
+  "lanes": [
+    {
+      "name": "api-mapping",
+      "branch_name": "codex/r05-api-mapping",
+      "worktree_path": "/tmp/miflatform-r05-api-mapping",
+      "objective": "Implement transaction IR to Express route/service codegen scaffold and mapping report output.",
+      "deliverables": [
+        "Add API mapping module under src/migrator/",
+        "Generate route/service stub artifacts from TransactionIR",
+        "Add unit tests for mapping outputs and failure paths",
+        "Update TECH_SPEC with API mapping contract"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "ui-preview-host",
+      "branch_name": "codex/r05-ui-preview-host",
+      "worktree_path": "/tmp/miflatform-r05-ui-preview-host",
+      "objective": "Create Vite+React preview host skeleton contract and manifest-driven screen loader design with implementation scaffold.",
+      "deliverables": [
+        "Add preview host scaffolding docs and folder plan",
+        "Define screens manifest schema and loader contract",
+        "Add minimal executable placeholder entry for preview pipeline",
+        "Add tests for manifest parsing if code is introduced"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "report-aggregation",
+      "branch_name": "codex/r05-report-aggregation",
+      "worktree_path": "/tmp/miflatform-r05-report-aggregation",
+      "objective": "Add batch summary aggregation with gate-level totals and failure leaderboard for large migrations.",
+      "deliverables": [
+        "Extend batch summary schema with per-gate pass/fail totals",
+        "Add failed-file ranking output",
+        "Add tests for aggregated summary behavior",
+        "Update README examples for new summary fields"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    }
+  ]
+}
