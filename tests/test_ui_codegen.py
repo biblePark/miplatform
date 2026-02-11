@@ -14,6 +14,7 @@ from migrator.ui_codegen import generate_ui_codegen_artifacts  # noqa: E402
 
 
 FIXTURE_XML = Path(__file__).parent / "fixtures" / "simple_screen_fixture.txt"
+WIDGET_FIXTURE_XML = Path(__file__).parent / "fixtures" / "widget_mapping_fixture.txt"
 
 
 class TestUiCodegen(unittest.TestCase):
@@ -37,8 +38,10 @@ class TestUiCodegen(unittest.TestCase):
 
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("export default function SimpleScreenFixtureScreen", tsx_text)
+            self.assertIn('from "@mui/material"', tsx_text)
             self.assertIn('className="mi-generated-screen"', tsx_text)
-            self.assertIn('className="mi-node mi-node-button"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-button"', tsx_text)
+            self.assertIn('data-mi-widget={"button"}', tsx_text)
             self.assertIn(
                 'data-mi-source-node={"/Screen[1]/Contents[1]/Button[1]"}',
                 tsx_text,
@@ -77,6 +80,36 @@ class TestUiCodegen(unittest.TestCase):
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("sourceXmlPath: minimal.xml", tsx_text)
             self.assertIn("node=/Screen[1] line=5", tsx_text)
+
+    def test_generate_ui_codegen_artifacts_maps_core_widgets_and_fallback(self) -> None:
+        parsed = parse_xml_file(WIDGET_FIXTURE_XML)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(WIDGET_FIXTURE_XML),
+                out_dir=out_dir,
+            )
+
+            tsx_path = Path(report.tsx_file)
+            tsx_text = tsx_path.read_text(encoding="utf-8")
+            self.assertIn('className="mi-widget mi-widget-static"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-edit"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-combo"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-button"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-grid"', tsx_text)
+            self.assertIn('data-mi-widget={"container"}', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-fallback"', tsx_text)
+            self.assertIn('data-mi-fallback={"unsupported-tag"}', tsx_text)
+            self.assertIn(
+                (
+                    "Unsupported widget tag 'UnknownWidget' at "
+                    "/Screen[1]/Contents[1]/Container[1]/UnknownWidget[1]; "
+                    "rendered as fallback widget."
+                ),
+                report.warnings,
+            )
 
 
 if __name__ == "__main__":

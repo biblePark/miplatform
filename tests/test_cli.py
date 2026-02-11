@@ -271,6 +271,8 @@ class TestCli(unittest.TestCase):
             tsx_path = Path(payload["tsx_file"])
             self.assertTrue(tsx_path.exists())
             tsx_text = tsx_path.read_text(encoding="utf-8")
+            self.assertIn('className="mi-widget mi-widget-button"', tsx_text)
+            self.assertIn('data-mi-widget={"button"}', tsx_text)
             self.assertIn(
                 'data-mi-source-node={"/Screen[1]/Contents[1]/Button[1]"}',
                 tsx_text,
