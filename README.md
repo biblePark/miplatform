@@ -34,6 +34,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 2: Roundtrip validator + Dataset/Binding/Event IR extraction + coverage gates.
 - Round 3: Transaction/Script extraction + canonical hash gate + batch parse CLI.
 - Round 4: Multi-agent operation pack (subagent templates + lane setup/brief scripts).
+- Round 5: API mapping scaffold + preview host scaffold + batch summary aggregation.
 
 ## Quick Start
 
@@ -53,6 +54,12 @@ Run batch parse:
 
 ```bash
 PYTHONPATH=src python3 -m migrator batch-parse tests/fixtures --out-dir out/batch-reports --summary-out out/batch-summary.json --recursive --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+```
+
+Run API mapping scaffold generation:
+
+```bash
+PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen.xml --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
 Example `out/batch-summary.json` (trimmed):
@@ -122,10 +129,12 @@ Create parallel lane worktrees:
 scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 ```
 
-## Implemented Scope (R01-R04)
+## Implemented Scope (R01-R05)
 
 - Parser, validator, canonicalizer, and CLI pipeline under `src/migrator/`.
 - Unit tests for parser/validator/CLI under `tests/`.
+- API mapping scaffold generator under `src/migrator/api_mapping.py`.
+- Preview host scaffold under `preview-host/` and manifest validator under `src/migrator/preview_manifest.py`.
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.

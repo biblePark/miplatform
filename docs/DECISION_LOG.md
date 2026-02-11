@@ -143,3 +143,41 @@ Consequences:
 
 - PM can dispatch parallel lanes faster with consistent quality.
 - Requires round config maintenance to keep templates aligned with real scope.
+
+## ADR-0008: Scaffold-First Delivery for API and Preview Outputs
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Migration pipeline needed executable artifacts quickly, but full semantic conversion is still pending.
+
+Decision:
+
+- Deliver scaffold-first outputs in R05:
+- `map-api` command generates Express route/service stubs from `TransactionIR`.
+- `preview-host/` provides manifest-driven React route shell with placeholder screen modules.
+
+Consequences:
+
+- Teams can validate integration flow early with deterministic outputs.
+- Generated business logic remains placeholder-level and requires later semantic mapping rounds.
+
+## ADR-0009: Aggregated Batch Summary for Operational Visibility
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Single-file parse reports are insufficient for monitoring large migration batches.
+
+Decision:
+
+- Extend `batch-parse` summary with gate pass/fail counts, failure reason counts, and per-file leaderboard.
+
+Consequences:
+
+- PM can prioritize high-impact failures faster during large runs.
+- Strict-failure fallback re-parse introduces additional cost on failing files.

@@ -9,6 +9,7 @@
 | 2026-02-11 | R02 | `codex/r02-roundtrip-validator` | Add roundtrip structural validator and extraction coverage for Dataset/Binding/Event | Completed | Added `roundtrip_structural_diff` gate, extraction IR entities, coverage gates, and 6 passing unit tests |
 | 2026-02-11 | R03 | `codex/r03-behavior-gates` | Add transaction/script extraction, canonical hash validation, and batch parse CLI | Completed | Added transaction/script IR + coverage gates, path-level mismatch details, canonical hash gate, and 10 passing unit tests |
 | 2026-02-11 | R04 | `codex/r04-multi-agent-kit` | Add subagent templates and parallel lane orchestration scripts | Completed | Added multi-agent template pack, lane brief generator, parallel worktree setup script, and runbook/rules updates |
+| 2026-02-11 | R05 | `codex/r05-api-mapping`, `codex/r05-ui-preview-host`, `codex/r05-report-aggregation` | Execute first parallel implementation round (API mapping, preview host scaffold, batch aggregation) | Completed | Merged 3 lane branches with handoffs; added `map-api` command, preview-host scaffold, summary aggregation fields, and 20 passing unit tests |
 
 ## Update Rule
 

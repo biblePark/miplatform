@@ -14,7 +14,7 @@ Pipeline stages:
 
 ## 2) Core IR Entities
 
-Current implemented entities (R03):
+Current implemented entities (R05):
 
 - `Screen`: root metadata and bounds
 - `Node` (`AstNode`): raw UI component tree
@@ -27,7 +27,7 @@ Current implemented entities (R03):
 
 ## 3) Validation Gates
 
-Current implemented gates (R03):
+Current implemented gates (R05):
 
 - `unknown_tag_count` (`expected=0`)
 - `unknown_attr_count` (`expected=0`)
@@ -206,7 +206,7 @@ Expected PM flow:
 4. Dispatch briefs and collect handoffs.
 5. Merge by checklist and rerun full gates.
 
-## 9) Preview Host Contract Validation (R05)
+## 10) Preview Host Contract Validation (R05)
 
 Python-side contract validator (for testable schema integrity):
 
@@ -218,3 +218,23 @@ Python-side contract validator (for testable schema integrity):
 - `entryModule` naming contract (`screens/...`)
 - timestamp format sanity check
 - `tests/test_preview_manifest.py` provides contract regression coverage.
+
+## 11) Batch Summary Aggregation Contract (R05)
+
+`batch-parse` summary now includes aggregation fields for round-level monitoring:
+
+- `gate_pass_fail_counts`: per gate `{ pass_count, fail_count }`
+- `failure_reason_counts`: grouped failure reasons (`strict_gate_failure`, `xml_parse_failure`, ...)
+- `failure_file_counts`: failure count by file path
+- `failure_file_leaderboard`: ranked list with:
+- `file`
+- `failed_gate_count`
+- `failed_gates`
+- `failure_reasons`
+
+Aggregation behavior:
+
+- On strict gate failures, the file is re-parsed in non-strict mode for gate accounting.
+- Parse-level failures still appear in `failures[]` and `failure_reason_counts`.
+- Summary remains backward-compatible for existing base fields:
+- `generated_at_utc`, `input_dir`, `out_dir`, `total_xml_files`, `reports_written`, `failures`.
