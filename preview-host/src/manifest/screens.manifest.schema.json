@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://miflatform-migrator/schema/screens.manifest.schema.json",
+  "title": "MIPLATFORM Screens Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "generatedAtUtc", "screens"],
+  "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "generatedAtUtc": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "screens": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "screenId",
+          "entryModule",
+          "sourceXmlPath",
+          "sourceNodePath"
+        ],
+        "properties": {
+          "screenId": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_-]*$"
+          },
+          "title": {
+            "type": "string",
+            "minLength": 1
+          },
+          "entryModule": {
+            "type": "string",
+            "pattern": "^screens/[A-Za-z0-9/_-]+$"
+          },
+          "sourceXmlPath": {
+            "type": "string",
+            "minLength": 1
+          },
+          "sourceNodePath": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    }
+  }
+}

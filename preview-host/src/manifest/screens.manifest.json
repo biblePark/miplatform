@@ -1,0 +1,14 @@
+{
+  "$schema": "./screens.manifest.schema.json",
+  "schemaVersion": "1.0",
+  "generatedAtUtc": "2026-02-11T00:00:00Z",
+  "screens": [
+    {
+      "screenId": "simple_screen",
+      "title": "Simple Screen (Placeholder)",
+      "entryModule": "screens/placeholder/PlaceholderScreen",
+      "sourceXmlPath": "tests/fixtures/simple_screen.xml",
+      "sourceNodePath": "/Screen[1]"
+    }
+  ]
+}

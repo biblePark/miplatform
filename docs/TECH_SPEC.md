@@ -63,12 +63,40 @@ Planned structure:
 - `/generated/api/src/services/<domain>.service.js`
 - `/generated/reports/<round>/...`
 
+Preview host scaffold (R05, repository-level runtime shell):
+
+- `/preview-host/src/main.tsx`
+- `/preview-host/src/app/PreviewApp.tsx`
+- `/preview-host/src/routes/PreviewScreenRoute.tsx`
+- `/preview-host/src/manifest/screens.manifest.schema.json`
+- `/preview-host/src/manifest/screens.manifest.json`
+- `/preview-host/src/screens/registry.ts`
+
 ## 5) Preview Strategy
 
 - Keep a thin host app with a fixed entry point (`main.tsx` + `PreviewApp.tsx`).
 - Load generated screens through manifest-driven routes:
 - `/preview/:screenId`
 - This solves "single component without app entry" by always rendering inside the host shell.
+
+Screens manifest contract (R05):
+
+- `schemaVersion`: currently fixed to `"1.0"`
+- `generatedAtUtc`: ISO-8601 datetime string (UTC expected)
+- `screens[]` item fields:
+- `screenId`: route key used by `/preview/:screenId`
+- `entryModule`: loader key (for example `screens/placeholder/PlaceholderScreen`)
+- `sourceXmlPath`: source trace path for diagnostics
+- `sourceNodePath`: source node path for diagnostics
+- `title` (optional): preview title override
+
+Loader contract (R05):
+
+- Route handler resolves `screenId` from URL.
+- Host finds the matching manifest entry by `screenId`.
+- Host resolves a module loader by `entryModule` in `src/screens/registry.ts`.
+- Loaded module must default-export a React component that receives `{ manifestEntry }`.
+- Missing `screenId` or missing loader must produce explicit contract errors in host UI (no silent fallback).
 
 ## 6) Tooling Choices
 
@@ -126,3 +154,16 @@ Expected PM flow:
 3. Create lane worktrees.
 4. Dispatch briefs and collect handoffs.
 5. Merge by checklist and rerun full gates.
+
+## 9) Preview Host Contract Validation (R05)
+
+Python-side contract validator (for testable schema integrity):
+
+- `src/migrator/preview_manifest.py` validates `screens manifest` payloads.
+- Validation covers:
+- required fields
+- screen id uniqueness
+- `schemaVersion` fixed value check
+- `entryModule` naming contract (`screens/...`)
+- timestamp format sanity check
+- `tests/test_preview_manifest.py` provides contract regression coverage.
