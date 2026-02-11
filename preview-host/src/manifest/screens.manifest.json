@@ -7,7 +7,7 @@
       "screenId": "simple_screen",
       "title": "Simple Screen (Placeholder)",
       "entryModule": "screens/placeholder/PlaceholderScreen",
-      "sourceXmlPath": "tests/fixtures/simple_screen.xml",
+      "sourceXmlPath": "tests/fixtures/simple_screen_fixture.txt",
       "sourceNodePath": "/Screen[1]"
     }
   ]
