@@ -11,6 +11,7 @@
 | 2026-02-11 | R04 | `codex/r04-multi-agent-kit` | Add subagent templates and parallel lane orchestration scripts | Completed | Added multi-agent template pack, lane brief generator, parallel worktree setup script, and runbook/rules updates |
 | 2026-02-11 | R05 | `codex/r05-api-mapping`, `codex/r05-ui-preview-host`, `codex/r05-report-aggregation` | Execute first parallel implementation round (API mapping, preview host scaffold, batch aggregation) | Completed | Merged 3 lane branches with handoffs; added `map-api` command, preview-host scaffold, summary aggregation fields, and 20 passing unit tests |
 | 2026-02-11 | R05.6 | `codex/r05-6-script-tx` | Extract script-body `transaction(...)` calls into `TransactionIR` and revalidate on real XML set | Completed | Added script-call transaction parser + tests, merged to `main`; real-sample result moved from 0 to 5 extracted transactions (4 files) with 22 passing unit tests |
+| 2026-02-11 | R06 | `codex/r06-ui-codegen-core`, `codex/r06-preview-manifest-sync`, `codex/r06-api-script-tx-sync` | Deliver first-pass UI codegen, preview sync automation, and script-transaction API mapping stabilization | Completed | Merged all 3 lanes with handoffs; added `gen-ui` + `sync-preview` commands, script transaction endpoint normalization/duplicate metadata, 30 passing unit tests, and `preview-host` build pass |
 
 ## Update Rule
 
