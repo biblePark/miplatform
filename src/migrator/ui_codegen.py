@@ -12,6 +12,37 @@ from .models import AstNode, ScreenIR, SourceRef
 _NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
 _NUMERIC_VALUE_RE = re.compile(r"^-?\d+(\.\d+)?$")
 _CONTAINER_TAGS = frozenset({"screen", "contents", "container"})
+_STYLE_DIMENSION_KEYS = frozenset(
+    {
+        "left",
+        "top",
+        "right",
+        "bottom",
+        "width",
+        "height",
+        "minWidth",
+        "minHeight",
+        "maxWidth",
+        "maxHeight",
+        "padding",
+        "paddingLeft",
+        "paddingTop",
+        "paddingRight",
+        "paddingBottom",
+        "margin",
+        "marginLeft",
+        "marginTop",
+        "marginRight",
+        "marginBottom",
+        "borderWidth",
+        "borderRadius",
+        "fontSize",
+        "letterSpacing",
+        "gap",
+    }
+)
+_FALSE_ATTR_VALUES = frozenset({"false", "0", "off", "no", "n"})
+_TRUE_ATTR_VALUES = frozenset({"true", "1", "on", "yes", "y"})
 
 
 @dataclass(slots=True)
@@ -93,27 +124,211 @@ def _normalize_dimension(raw: str | None) -> str | None:
     return value
 
 
-def _build_node_style(node: AstNode, *, is_root: bool) -> dict[str, str]:
+def _normalize_boolean(raw: str | None) -> bool | None:
+    if raw is None:
+        return None
+    value = raw.strip().lower()
+    if not value:
+        return None
+    if value in _TRUE_ATTR_VALUES:
+        return True
+    if value in _FALSE_ATTR_VALUES:
+        return False
+    return None
+
+
+def _normalized_style_value(raw: str | None, *, style_key: str) -> str | None:
+    if raw is None:
+        return None
+    value = raw.strip()
+    if not value:
+        return None
+    if style_key in _STYLE_DIMENSION_KEYS:
+        return _normalize_dimension(value)
+    return value
+
+
+def _set_style_from_attr(
+    style: dict[str, str],
+    attrs: dict[str, str],
+    *,
+    style_key: str,
+    attr_names: tuple[str, ...],
+) -> None:
+    for attr_name in attr_names:
+        value = _normalized_style_value(_attr_lookup(attrs, attr_name), style_key=style_key)
+        if value is not None:
+            style[style_key] = value
+            return
+
+
+def _build_node_style(node: AstNode, *, is_root: bool, widget_kind: str) -> dict[str, str]:
     style: dict[str, str] = {}
-    if is_root:
+
+    _set_style_from_attr(style, node.attributes, style_key="left", attr_names=("left",))
+    _set_style_from_attr(style, node.attributes, style_key="top", attr_names=("top",))
+    _set_style_from_attr(style, node.attributes, style_key="right", attr_names=("right",))
+    _set_style_from_attr(style, node.attributes, style_key="bottom", attr_names=("bottom",))
+    _set_style_from_attr(style, node.attributes, style_key="width", attr_names=("width",))
+    _set_style_from_attr(style, node.attributes, style_key="height", attr_names=("height",))
+    _set_style_from_attr(style, node.attributes, style_key="minWidth", attr_names=("minwidth",))
+    _set_style_from_attr(style, node.attributes, style_key="minHeight", attr_names=("minheight",))
+    _set_style_from_attr(style, node.attributes, style_key="maxWidth", attr_names=("maxwidth",))
+    _set_style_from_attr(style, node.attributes, style_key="maxHeight", attr_names=("maxheight",))
+    _set_style_from_attr(style, node.attributes, style_key="padding", attr_names=("padding",))
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="paddingLeft",
+        attr_names=("paddingleft", "padding-left"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="paddingTop",
+        attr_names=("paddingtop", "padding-top"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="paddingRight",
+        attr_names=("paddingright", "padding-right"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="paddingBottom",
+        attr_names=("paddingbottom", "padding-bottom"),
+    )
+    _set_style_from_attr(style, node.attributes, style_key="margin", attr_names=("margin",))
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="marginLeft",
+        attr_names=("marginleft", "margin-left"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="marginTop",
+        attr_names=("margintop", "margin-top"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="marginRight",
+        attr_names=("marginright", "margin-right"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="marginBottom",
+        attr_names=("marginbottom", "margin-bottom"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="background",
+        attr_names=("background",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="backgroundColor",
+        attr_names=("backgroundcolor", "backcolor"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="color",
+        attr_names=("color", "textcolor", "forecolor"),
+    )
+    _set_style_from_attr(style, node.attributes, style_key="border", attr_names=("border",))
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="borderColor",
+        attr_names=("bordercolor",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="borderStyle",
+        attr_names=("borderstyle",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="borderWidth",
+        attr_names=("borderwidth",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="borderRadius",
+        attr_names=("borderradius", "radius"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="fontFamily",
+        attr_names=("fontfamily",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="fontSize",
+        attr_names=("fontsize",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="fontWeight",
+        attr_names=("fontweight",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="letterSpacing",
+        attr_names=("letterspacing",),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="textAlign",
+        attr_names=("textalign", "align"),
+    )
+    _set_style_from_attr(
+        style,
+        node.attributes,
+        style_key="whiteSpace",
+        attr_names=("whitespace",),
+    )
+    _set_style_from_attr(style, node.attributes, style_key="overflow", attr_names=("overflow",))
+    _set_style_from_attr(style, node.attributes, style_key="opacity", attr_names=("opacity",))
+    _set_style_from_attr(style, node.attributes, style_key="zIndex", attr_names=("zindex",))
+    _set_style_from_attr(style, node.attributes, style_key="display", attr_names=("display",))
+    _set_style_from_attr(style, node.attributes, style_key="gap", attr_names=("gap",))
+
+    positioned = any(key in style for key in ("left", "top", "right", "bottom"))
+    if positioned:
+        style["position"] = "absolute"
+    elif is_root or widget_kind == "container":
         style["position"] = "relative"
 
-    left = _normalize_dimension(_attr_lookup(node.attributes, "left"))
-    top = _normalize_dimension(_attr_lookup(node.attributes, "top"))
-    width = _normalize_dimension(_attr_lookup(node.attributes, "width"))
-    height = _normalize_dimension(_attr_lookup(node.attributes, "height"))
+    visible = _normalize_boolean(
+        _attr_lookup(node.attributes, "visible") or _attr_lookup(node.attributes, "isvisible")
+    )
+    if visible is False:
+        style["display"] = "none"
 
-    if left is not None:
-        style["left"] = left
-    if top is not None:
-        style["top"] = top
-    if width is not None:
-        style["width"] = width
-    if height is not None:
-        style["height"] = height
-
-    if left is not None or top is not None:
-        style["position"] = "absolute"
+    enabled = _normalize_boolean(
+        _attr_lookup(node.attributes, "enable")
+        or _attr_lookup(node.attributes, "enabled")
+        or _attr_lookup(node.attributes, "isenabled")
+    )
+    if enabled is False:
+        style["pointerEvents"] = "none"
 
     return style
 
@@ -124,6 +339,15 @@ def _style_attribute(style: dict[str, str]) -> str:
     payload = {key: style[key] for key in sorted(style)}
     style_json = json.dumps(payload, ensure_ascii=False)
     return f" style={{{style_json}}}"
+
+
+def _widget_content_style(widget_kind: str) -> dict[str, str]:
+    if widget_kind == "container":
+        return {}
+    return {
+        "height": "100%",
+        "width": "100%",
+    }
 
 
 def _node_attrs_label(node: AstNode) -> str | None:
@@ -173,6 +397,7 @@ def _trace_attributes(node: AstNode) -> list[str]:
 
 def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[str]:
     indent = "  " * depth
+    content_style = _style_attribute(_widget_content_style(widget_kind))
     if widget_kind == "container":
         return []
 
@@ -180,8 +405,8 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         label = _node_display_text(node, fallback="Button")
         return [
             (
-                f'{indent}<Button className="mi-widget mi-widget-button" '
-                f"variant=\"contained\">{_to_jsx_string(label)}</Button>"
+                f'{indent}<Button className="mi-widget mi-widget-button"'
+                f'{content_style} variant="contained">{_to_jsx_string(label)}</Button>'
             )
         ]
 
@@ -191,7 +416,8 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         return [
             (
                 f'{indent}<TextField className="mi-widget mi-widget-edit" '
-                f"size=\"small\" label={_to_jsx_string(label)} "
+                f'fullWidth size="small" label={_to_jsx_string(label)}'
+                f"{content_style} "
                 f"defaultValue={_to_jsx_string(default_value)} />"
             )
         ]
@@ -200,8 +426,8 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         value = _node_display_text(node, fallback="Static")
         return [
             (
-                f'{indent}<Typography className="mi-widget mi-widget-static" '
-                f"variant=\"body2\">{_to_jsx_string(value)}</Typography>"
+                f'{indent}<Typography className="mi-widget mi-widget-static"'
+                f'{content_style} variant="body2">{_to_jsx_string(value)}</Typography>'
             )
         ]
 
@@ -209,7 +435,10 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
         label = _node_display_text(node, fallback="Combo")
         placeholder = f"Select {label}"
         return [
-            f'{indent}<FormControl className="mi-widget mi-widget-combo" size="small">',
+            (
+                f'{indent}<FormControl className="mi-widget mi-widget-combo" '
+                f'fullWidth size="small"{content_style}>'
+            ),
             f"{indent}  <InputLabel>{_to_jsx_string(label)}</InputLabel>",
             (
                 f"{indent}  <Select label={_to_jsx_string(label)} "
@@ -229,7 +458,7 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
             else grid_title
         )
         return [
-            f'{indent}<TableContainer className="mi-widget mi-widget-grid">',
+            f'{indent}<TableContainer className="mi-widget mi-widget-grid"{content_style}>',
             f"{indent}  <Table size=\"small\" aria-label={_to_jsx_string(grid_title)}>",
             f"{indent}    <TableHead>",
             f"{indent}      <TableRow>",
@@ -247,8 +476,9 @@ def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[
 
     return [
         (
-            f'{indent}<Typography className="mi-widget mi-widget-fallback" '
-            f'variant="caption">{_to_jsx_string(f"Unsupported tag: {node.tag}")}</Typography>'
+            f'{indent}<Typography className="mi-widget mi-widget-fallback"'
+            f'{content_style} variant="caption">'
+            f"{_to_jsx_string(f'Unsupported tag: {node.tag}')}</Typography>"
         )
     ]
 
@@ -272,7 +502,7 @@ def _render_node(
                 "rendered as fallback widget."
             )
         )
-    style_attr = _style_attribute(_build_node_style(node, is_root=is_root))
+    style_attr = _style_attribute(_build_node_style(node, is_root=is_root, widget_kind=widget_kind))
     trace_payload = " ".join(trace_attrs)
 
     lines = [

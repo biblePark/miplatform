@@ -15,6 +15,7 @@ from migrator.ui_codegen import generate_ui_codegen_artifacts  # noqa: E402
 
 FIXTURE_XML = Path(__file__).parent / "fixtures" / "simple_screen_fixture.txt"
 WIDGET_FIXTURE_XML = Path(__file__).parent / "fixtures" / "widget_mapping_fixture.txt"
+LAYOUT_STYLE_FIXTURE_XML = Path(__file__).parent / "fixtures" / "layout_style_fixture.txt"
 
 
 class TestUiCodegen(unittest.TestCase):
@@ -109,6 +110,85 @@ class TestUiCodegen(unittest.TestCase):
                     "rendered as fallback widget."
                 ),
                 report.warnings,
+            )
+
+    def test_generate_ui_codegen_artifacts_maps_layout_and_style_attributes(self) -> None:
+        parsed = parse_xml_file(LAYOUT_STYLE_FIXTURE_XML)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(LAYOUT_STYLE_FIXTURE_XML),
+                out_dir=out_dir,
+            )
+
+            tsx_path = Path(report.tsx_file)
+            tsx_text = tsx_path.read_text(encoding="utf-8")
+
+            self.assertIn(
+                'style={{"backgroundColor": "#f5f7fa", "height": "768px", "position": "relative", "width": "1024px"}}',
+                tsx_text,
+            )
+            self.assertIn('className="mi-widget-shell mi-widget-shell-contents"', tsx_text)
+            self.assertIn(
+                'data-mi-source-node={"/Screen[1]/Contents[1]"}',
+                tsx_text,
+            )
+            self.assertIn('style={{"position": "relative"}}', tsx_text)
+            self.assertIn(
+                (
+                    'style={{"background": "#ffffff", "borderColor": "#d0d7e2", '
+                    '"borderRadius": "8px", "borderStyle": "solid", "borderWidth": "1px", '
+                    '"bottom": "16px", "left": "24px", "padding": "12px", '
+                    '"position": "absolute", "right": "24px", "top": "16px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    'style={{"color": "#1f2a44", "fontSize": "14px", "fontWeight": "600", '
+                    '"height": "32px", "left": "12px", "position": "absolute", '
+                    '"textAlign": "center", "top": "12px", "width": "260px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    'style={{"height": "32px", "left": "12px", "pointerEvents": "none", '
+                    '"position": "absolute", "top": "56px", "width": "240px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    'style={{"display": "none", "height": "32px", "left": "264px", '
+                    '"position": "absolute", "top": "56px", "width": "104px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertEqual(
+                tsx_text.count('style={{"height": "100%", "width": "100%"}}'),
+                5,
+            )
+            self.assertIn(
+                (
+                    '<TextField className="mi-widget mi-widget-edit" fullWidth size="small" '
+                    'label={"Keyword"} style={{"height": "100%", "width": "100%"}} '
+                    'defaultValue={"A-100"} />'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    '<FormControl className="mi-widget mi-widget-combo" fullWidth '
+                    'size="small" style={{"height": "100%", "width": "100%"}}>'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                'className="mi-widget mi-widget-grid" style={{"height": "100%", "width": "100%"}}',
+                tsx_text,
             )
 
 
