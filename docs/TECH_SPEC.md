@@ -144,7 +144,7 @@ Known-profile inputs:
 - Tag profile file: newline-delimited tag names
 - Attribute profile file: JSON map like `{ "Screen": ["id"], "*": ["commonAttr"] }`
 
-## 8) API Mapping Contract (R05)
+## 8) API Mapping Contract (R06)
 
 Scope:
 
@@ -159,16 +159,34 @@ Input contract:
 - `endpoint` (target route path)
 - `method` (HTTP verb)
 - `source` (traceability path/line)
+- `node_tag` (used for ScriptTransactionCall-specific normalization)
+
+Endpoint normalization rules:
+
+- General normalization:
+- trim whitespace
+- convert `\` to `/`
+- strip query/fragment suffixes for route matching
+- force leading `/`, collapse repeated `/`, trim trailing `/` except root
+- `ScriptTransactionCall` additional normalization:
+- `service::path` style endpoints become `/service/path`
+- absolute URLs are converted to their URL path (for example `http://host/a/b` -> `/a/b`)
 
 Mapping decision contract:
 
 - `success`:
 - endpoint and method exist
 - method is one of `GET|POST|PUT|PATCH|DELETE`
-- route key `(method, endpoint)` is unique within the screen
+- route key `(method, normalized_endpoint)` is unique within the screen
+- service function naming is collision-safe and deterministic:
+- default transaction nodes use `transaction_id|node_id|transaction_<index>`
+- `ScriptTransactionCall` uses `transaction_id + method + normalized_endpoint` seed before JS identifier normalization
+- remaining collisions add numeric suffixes (`<name>2`, `<name>3`, ...)
 - `failure`:
 - missing required fields (`missing_endpoint`, `missing_method`)
-- duplicate route conflict (`duplicate_route:<METHOD>:<PATH>`)
+- duplicate route conflict (`duplicate_route:<METHOD>:<PATH>`) where `<PATH>` is normalized
+- duplicates follow deterministic policy `route_key(method, normalized_endpoint):first_seen_wins`
+- duplicate result entries include `duplicate_of_index` and `duplicate_of_transaction_id`
 - `unsupported`:
 - method present but unsupported (`unsupported_http_method:<METHOD>`)
 
@@ -181,7 +199,8 @@ Output contract:
 - `summary.mapped_success`
 - `summary.mapped_failure`
 - `summary.unsupported`
-- `results[]` with per-transaction status/reason and generated route/service identifiers
+- `duplicate_policy`
+- `results[]` with per-transaction status/reason, generated route/service identifiers, and duplicate linkage metadata (`duplicate_of_index`, `duplicate_of_transaction_id`)
 
 Exception and exit contract:
 
