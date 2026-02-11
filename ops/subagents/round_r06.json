@@ -1,0 +1,56 @@
+{
+  "round_id": "R06",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "cd preview-host && npm run build"
+  ],
+  "lanes": [
+    {
+      "name": "ui-codegen-core",
+      "branch_name": "codex/r06-ui-codegen-core",
+      "worktree_path": "/tmp/miflatform-r06-ui-codegen-core",
+      "objective": "Implement first-pass React TSX screen code generation from parsed screen IR with source trace metadata.",
+      "deliverables": [
+        "Add UI codegen module under src/migrator/",
+        "Add CLI entrypoint for UI code generation",
+        "Generate deterministic output paths and file names",
+        "Add tests for generated TSX structure and source trace comments"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "preview-manifest-sync",
+      "branch_name": "codex/r06-preview-manifest-sync",
+      "worktree_path": "/tmp/miflatform-r06-preview-manifest-sync",
+      "objective": "Wire generated UI outputs into preview-host manifest/registry so converted screens can be opened directly in browser.",
+      "deliverables": [
+        "Add manifest generation/update utility for generated screens",
+        "Ensure registry contract resolves generated entry modules",
+        "Document local dev verification flow for generated outputs",
+        "Add tests for manifest/registry synchronization behavior"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    },
+    {
+      "name": "api-script-tx-sync",
+      "branch_name": "codex/r06-api-script-tx-sync",
+      "worktree_path": "/tmp/miflatform-r06-api-script-tx-sync",
+      "objective": "Stabilize ScriptTransactionCall integration into API mapping artifacts with collision-safe route/service naming.",
+      "deliverables": [
+        "Extend mapping strategy for ScriptTransactionCall endpoint normalization",
+        "Add deterministic duplicate handling policy in report output",
+        "Strengthen unit tests using script-derived transactions",
+        "Update TECH_SPEC section for API mapping rules"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    }
+  ]
+}
