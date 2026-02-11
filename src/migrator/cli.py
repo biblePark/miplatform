@@ -11,6 +11,7 @@ from .api_mapping import generate_api_mapping_artifacts
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
 from .ui_codegen import generate_ui_codegen_artifacts
+from .preview_sync import sync_preview_host
 
 STRICT_GATE_FAILURE_PREFIX = "Strict parse failed for gates:"
 XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
@@ -217,6 +218,34 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(gen_ui_cmd)
     gen_ui_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    sync_preview_cmd = subparsers.add_parser(
+        "sync-preview",
+        help="Sync preview-host manifest/registry with generated screen modules",
+    )
+    sync_preview_cmd.add_argument(
+        "--generated-screens-dir",
+        default="generated/frontend/src/screens",
+        help="Directory containing generated screen entry modules (default: generated/frontend/src/screens)",
+    )
+    sync_preview_cmd.add_argument(
+        "--preview-host-dir",
+        default="preview-host",
+        help="Preview host root directory (default: preview-host)",
+    )
+    sync_preview_cmd.add_argument(
+        "--manifest-file",
+        help="Optional explicit output path for screens manifest JSON",
+    )
+    sync_preview_cmd.add_argument(
+        "--registry-generated-file",
+        help="Optional explicit output path for generated registry TypeScript module",
+    )
+    sync_preview_cmd.add_argument(
+        "--report-out",
+        help="Optional output path for sync report JSON",
+    )
+    sync_preview_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
+
     return parser
 
 
@@ -347,6 +376,19 @@ def run_gen_ui(args: argparse.Namespace) -> int:
     _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
     return 0
 
+def run_sync_preview(args: argparse.Namespace) -> int:
+    report = sync_preview_host(
+        generated_screens_dir=args.generated_screens_dir,
+        preview_host_dir=args.preview_host_dir,
+        manifest_file=args.manifest_file,
+        registry_generated_file=args.registry_generated_file,
+        pretty=args.pretty,
+    )
+    if args.report_out:
+        report_out = Path(args.report_out).resolve()
+        _write_json_file(report_out, report.to_dict(), pretty=args.pretty)
+    return 0
+
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
@@ -361,6 +403,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_map_api(args)
         if args.command == "gen-ui":
             return run_gen_ui(args)
+        if args.command == "sync-preview":
+            return run_sync_preview(args)
     except ParseStrictError as exc:
         print(str(exc), file=sys.stderr)
         return 2

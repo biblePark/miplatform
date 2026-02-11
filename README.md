@@ -62,6 +62,12 @@ Run API mapping scaffold generation:
 PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
+Sync generated UI screens into preview-host manifest + registry:
+
+```bash
+PYTHONPATH=src python3 -m migrator sync-preview --generated-screens-dir generated/frontend/src/screens --preview-host-dir preview-host --report-out out/preview-sync-report.json --pretty
+```
+
 Example `out/batch-summary.json` (trimmed):
 
 ```json
@@ -135,6 +141,7 @@ scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 - Unit tests for parser/validator/CLI under `tests/`.
 - API mapping scaffold generator under `src/migrator/api_mapping.py`.
 - Preview host scaffold under `preview-host/` and manifest validator under `src/migrator/preview_manifest.py`.
+- Preview manifest/registry sync utility under `src/migrator/preview_sync.py`.
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.

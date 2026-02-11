@@ -277,6 +277,59 @@ class TestCli(unittest.TestCase):
             )
             self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
 
+    def test_sync_preview_generates_manifest_registry_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            generated_dir = workspace / "generated" / "frontend" / "src" / "screens"
+            preview_host_dir = workspace / "preview-host"
+            manifest_path = preview_host_dir / "src" / "manifest" / "screens.manifest.json"
+            registry_generated_path = (
+                preview_host_dir / "src" / "screens" / "registry.generated.ts"
+            )
+            report_out = workspace / "preview-sync-report.json"
+
+            generated_dir.mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "manifest").mkdir(parents=True, exist_ok=True)
+            module_file = generated_dir / "Orders.tsx"
+            module_file.write_text(
+                "export default function Orders() { return null; }\n",
+                encoding="utf-8",
+            )
+
+            rc = main(
+                [
+                    "sync-preview",
+                    "--generated-screens-dir",
+                    str(generated_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(report_out.exists())
+            self.assertTrue(manifest_path.exists())
+            self.assertTrue(registry_generated_path.exists())
+
+            report_payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(report_payload["generated_screen_count"], 1)
+            self.assertEqual(
+                report_payload["generated_entry_modules"],
+                ["screens/generated/Orders"],
+            )
+
+            manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            self.assertEqual(manifest_payload["schemaVersion"], "1.0")
+            self.assertEqual(len(manifest_payload["screens"]), 1)
+            self.assertEqual(manifest_payload["screens"][0]["screenId"], "Orders")
+            self.assertEqual(
+                manifest_payload["screens"][0]["entryModule"],
+                "screens/generated/Orders",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()
