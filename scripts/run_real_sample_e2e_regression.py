@@ -318,7 +318,12 @@ def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
 
-    samples = _collect_samples(args)
+    try:
+        samples = _collect_samples(args)
+    except (FileNotFoundError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+
     out_dir = Path(args.out_dir).resolve()
     runs_dir = out_dir / "runs"
     runs_dir.mkdir(parents=True, exist_ok=True)
