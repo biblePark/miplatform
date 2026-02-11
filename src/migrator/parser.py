@@ -34,6 +34,16 @@ class ParseStrictError(RuntimeError):
     """Raised when strict parse gates fail."""
 
 
+def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
+    if key in attrs:
+        return attrs[key]
+    key_lower = key.lower()
+    for attr_key, value in attrs.items():
+        if attr_key.lower() == key_lower:
+            return value
+    return None
+
+
 def _iter_nodes(root: AstNode):
     yield root
     for child in root.children:
@@ -43,9 +53,10 @@ def _iter_nodes(root: AstNode):
 def _iter_dataset_record_nodes(root_dataset: AstNode):
     def walk(node: AstNode):
         for child in node.children:
-            if child.tag == "Dataset" and child is not root_dataset:
+            child_tag = child.tag.lower()
+            if child_tag == "dataset" and child is not root_dataset:
                 continue
-            if child.tag == "record":
+            if child_tag == "record":
                 yield child
             yield from walk(child)
 
@@ -57,15 +68,15 @@ def _extract_dataset(dataset_node: AstNode) -> DatasetIR:
     records: list[DatasetRecordIR] = []
 
     for child in dataset_node.children:
-        if child.tag != "colinfo":
+        if child.tag.lower() != "colinfo":
             continue
         for column_node in child.children:
-            if column_node.tag != "column":
+            if column_node.tag.lower() != "column":
                 continue
             columns.append(
                 DatasetColumnIR(
-                    column_id=column_node.attributes.get("id"),
-                    data_type=column_node.attributes.get("type"),
+                    column_id=_attr_lookup(column_node.attributes, "id"),
+                    data_type=_attr_lookup(column_node.attributes, "type"),
                     attributes=dict(column_node.attributes),
                     source=column_node.source,
                 )
@@ -80,7 +91,7 @@ def _extract_dataset(dataset_node: AstNode) -> DatasetIR:
         )
 
     return DatasetIR(
-        dataset_id=dataset_node.attributes.get("id"),
+        dataset_id=_attr_lookup(dataset_node.attributes, "id"),
         attributes=dict(dataset_node.attributes),
         columns=columns,
         records=records,
@@ -109,16 +120,18 @@ def _extract_transaction(node: AstNode) -> TransactionIR:
     attrs = node.attributes
     return TransactionIR(
         node_tag=node.tag,
-        node_id=attrs.get("id"),
+        node_id=_attr_lookup(attrs, "id"),
         transaction_id=(
-            attrs.get("transactionid")
-            or attrs.get("serviceid")
-            or attrs.get("svcid")
-            or attrs.get("id")
-            or attrs.get("name")
+            _attr_lookup(attrs, "transactionid")
+            or _attr_lookup(attrs, "serviceid")
+            or _attr_lookup(attrs, "svcid")
+            or _attr_lookup(attrs, "id")
+            or _attr_lookup(attrs, "name")
         ),
-        endpoint=attrs.get("url") or attrs.get("endpoint") or attrs.get("serviceurl"),
-        method=attrs.get("method") or attrs.get("httpmethod"),
+        endpoint=_attr_lookup(attrs, "url")
+        or _attr_lookup(attrs, "endpoint")
+        or _attr_lookup(attrs, "serviceurl"),
+        method=_attr_lookup(attrs, "method") or _attr_lookup(attrs, "httpmethod"),
         source=node.source,
     )
 
@@ -141,17 +154,19 @@ def _extract_script(node: AstNode) -> ScriptBlockIR:
     attrs = node.attributes
     body = (
         node.text
-        or attrs.get("script")
-        or attrs.get("scriptbody")
-        or attrs.get("expression")
-        or attrs.get("expr")
-        or attrs.get("functionbody")
+        or _attr_lookup(attrs, "script")
+        or _attr_lookup(attrs, "scriptbody")
+        or _attr_lookup(attrs, "expression")
+        or _attr_lookup(attrs, "expr")
+        or _attr_lookup(attrs, "functionbody")
         or ""
     )
     return ScriptBlockIR(
         node_tag=node.tag,
-        node_id=attrs.get("id"),
-        script_name=attrs.get("name") or attrs.get("id") or attrs.get("function"),
+        node_id=_attr_lookup(attrs, "id"),
+        script_name=_attr_lookup(attrs, "name")
+        or _attr_lookup(attrs, "id")
+        or _attr_lookup(attrs, "function"),
         body=body,
         source=node.source,
     )
@@ -183,14 +198,15 @@ def _extract_entities(
     script_points_found = 0
 
     for node in _iter_nodes(ast_root):
-        node_id = node.attributes.get("id")
+        node_id = _attr_lookup(node.attributes, "id")
 
-        if node.tag == "Dataset":
+        if node.tag.lower() == "dataset":
             dataset_nodes_found += 1
             datasets.append(_extract_dataset(node))
 
         for attr_key, attr_value in node.attributes.items():
-            if attr_key.startswith("bind"):
+            attr_key_lower = attr_key.lower()
+            if attr_key_lower.startswith("bind"):
                 binding_points_found += 1
                 bindings.append(
                     BindingIR(
@@ -202,7 +218,7 @@ def _extract_entities(
                     )
                 )
 
-            if attr_key.startswith("on") and len(attr_key) > 2:
+            if attr_key_lower.startswith("on") and len(attr_key_lower) > 2:
                 event_points_found += 1
                 events.append(
                     EventIR(
@@ -220,10 +236,10 @@ def _extract_entities(
                 EventIR(
                     node_tag=node.tag,
                     node_id=node_id,
-                    event_name=node.attributes.get("name", "event"),
-                    handler=node.attributes.get("handler")
-                    or node.attributes.get("function")
-                    or node.attributes.get("script")
+                    event_name=_attr_lookup(node.attributes, "name") or "event",
+                    handler=_attr_lookup(node.attributes, "handler")
+                    or _attr_lookup(node.attributes, "function")
+                    or _attr_lookup(node.attributes, "script")
                     or "",
                     source=node.source,
                 )

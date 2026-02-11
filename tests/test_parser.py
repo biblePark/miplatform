@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import sys
+import tempfile
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -128,6 +129,46 @@ class TestParser(unittest.TestCase):
         self.assertEqual(len(report.stats.unknown_tags), 0)
         self.assertEqual(len(report.stats.unknown_attrs), 0)
         self.assertTrue(all(gate.passed for gate in report.gates))
+
+    def test_case_insensitive_event_binding_and_transaction_attrs(self) -> None:
+        xml_payload = """<?xml version='1.0' encoding='UTF-8'?>
+<Screen Id='CaseSample'>
+  <Dataset Id='dsCase'>
+    <colinfo>
+      <Column Id='col1' Type='string' />
+    </colinfo>
+    <Record col1='X' />
+  </Dataset>
+  <Contents>
+    <Button Id='btnCase' OnClick='fnCase' />
+    <Grid Id='grdCase' BindDataset='dsCase' />
+  </Contents>
+  <Transaction Id='txCase' ServiceId='SVC_CASE' Url='/api/case' Method='GET' />
+  <Script Name='fnCase'>trace('case');</Script>
+</Screen>
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "case_sample.xml"
+            xml_file.write_text(xml_payload, encoding="utf-8")
+            report = parse_xml_file(xml_file, config=ParseConfig(capture_text=True))
+
+        self.assertEqual(len(report.screen.datasets), 1)
+        self.assertEqual(report.screen.datasets[0].dataset_id, "dsCase")
+        self.assertEqual(report.screen.datasets[0].columns[0].column_id, "col1")
+        self.assertEqual(report.screen.datasets[0].columns[0].data_type, "string")
+
+        self.assertEqual(len(report.screen.bindings), 1)
+        self.assertEqual(report.screen.bindings[0].binding_key, "BindDataset")
+        self.assertEqual(report.screen.bindings[0].binding_value, "dsCase")
+
+        self.assertEqual(len(report.screen.events), 1)
+        self.assertEqual(report.screen.events[0].event_name, "OnClick")
+        self.assertEqual(report.screen.events[0].handler, "fnCase")
+
+        self.assertEqual(len(report.screen.transactions), 1)
+        self.assertEqual(report.screen.transactions[0].transaction_id, "SVC_CASE")
+        self.assertEqual(report.screen.transactions[0].endpoint, "/api/case")
+        self.assertEqual(report.screen.transactions[0].method, "GET")
 
 
 if __name__ == "__main__":
