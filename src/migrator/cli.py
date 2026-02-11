@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 from datetime import UTC, datetime
 import json
 from pathlib import Path
@@ -8,6 +9,10 @@ import sys
 
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
+
+STRICT_GATE_FAILURE_PREFIX = "Strict parse failed for gates:"
+XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
+FAILURE_LEADERBOARD_LIMIT = 10
 
 
 def _load_known_tags(path: str | None) -> set[str] | None:
@@ -73,6 +78,78 @@ def _write_json_file(path: Path, payload: object, *, pretty: bool) -> None:
     )
 
 
+def _classify_parse_failure(error_message: str) -> str:
+    if error_message.startswith(STRICT_GATE_FAILURE_PREFIX):
+        return "strict_gate_failure"
+    if error_message.startswith(XML_PARSE_FAILURE_PREFIX):
+        return "xml_parse_failure"
+    return "parse_failure"
+
+
+def _extract_failed_gate_names(error_message: str) -> list[str]:
+    if not error_message.startswith(STRICT_GATE_FAILURE_PREFIX):
+        return []
+    gates_text = error_message.removeprefix(STRICT_GATE_FAILURE_PREFIX).strip()
+    if not gates_text:
+        return []
+    return sorted({gate.strip() for gate in gates_text.split(",") if gate.strip()})
+
+
+def _as_non_strict_config(config: ParseConfig) -> ParseConfig:
+    return ParseConfig(
+        strict=False,
+        known_tags=config.known_tags,
+        known_attrs_by_tag=config.known_attrs_by_tag,
+        capture_text=config.capture_text,
+        enable_roundtrip_gate=config.enable_roundtrip_gate,
+        roundtrip_mismatch_limit=config.roundtrip_mismatch_limit,
+    )
+
+
+def _accumulate_gate_counts(
+    gate_counts: dict[str, dict[str, int]],
+    gates: list[object],
+) -> None:
+    for gate in gates:
+        gate_name = getattr(gate, "name")
+        passed = bool(getattr(gate, "passed"))
+        if gate_name not in gate_counts:
+            gate_counts[gate_name] = {"pass_count": 0, "fail_count": 0}
+        if passed:
+            gate_counts[gate_name]["pass_count"] += 1
+        else:
+            gate_counts[gate_name]["fail_count"] += 1
+
+
+def _sorted_counter(counter: Counter[str]) -> dict[str, int]:
+    return {
+        key: counter[key]
+        for key in sorted(counter, key=lambda item: (-counter[item], item))
+    }
+
+
+def _build_failure_file_leaderboard(
+    *,
+    failure_gates_by_file: dict[str, set[str]],
+    failure_reasons_by_file: dict[str, set[str]],
+    limit: int,
+) -> list[dict[str, object]]:
+    leaderboard: list[dict[str, object]] = []
+    all_files = sorted(set(failure_reasons_by_file) | set(failure_gates_by_file))
+    for file_path in all_files:
+        failed_gates = sorted(failure_gates_by_file.get(file_path, set()))
+        leaderboard.append(
+            {
+                "file": file_path,
+                "failed_gate_count": len(failed_gates),
+                "failed_gates": failed_gates,
+                "failure_reasons": sorted(failure_reasons_by_file.get(file_path, set())),
+            }
+        )
+    leaderboard.sort(key=lambda item: (-int(item["failed_gate_count"]), str(item["file"])))
+    return leaderboard[: max(0, limit)]
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="mifl-migrator")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -121,35 +198,81 @@ def run_batch_parse(args: argparse.Namespace) -> int:
     out_dir = Path(args.out_dir).resolve()
     summary_out = Path(args.summary_out).resolve()
     config = _build_parse_config(args)
+    non_strict_config = _as_non_strict_config(config)
 
     pattern = "**/*.xml" if args.recursive else "*.xml"
     xml_files = sorted(input_dir.glob(pattern))
+    xml_file_paths = [path for path in xml_files if path.is_file()]
 
     reports_written = 0
-    failures: list[dict[str, str]] = []
+    failures: list[dict[str, object]] = []
+    gate_counts: dict[str, dict[str, int]] = {}
+    failure_reason_counts: Counter[str] = Counter()
+    failure_file_counts: Counter[str] = Counter()
+    failure_gates_by_file: dict[str, set[str]] = defaultdict(set)
+    failure_reasons_by_file: dict[str, set[str]] = defaultdict(set)
 
-    for xml_file in xml_files:
-        if not xml_file.is_file():
-            continue
-
+    for xml_file in xml_file_paths:
         try:
             report = parse_xml_file(xml_file, config=config)
             relative = xml_file.relative_to(input_dir)
             report_path = out_dir / relative.with_suffix(".json")
             _write_json_file(report_path, report.to_dict(), pretty=args.pretty)
+            _accumulate_gate_counts(gate_counts, report.gates)
             reports_written += 1
         except ParseStrictError as exc:
-            failures.append({"file": str(xml_file), "error": str(exc)})
+            file_path = str(xml_file)
+            error_message = str(exc)
+            failure_reason = _classify_parse_failure(error_message)
+            failed_gates = _extract_failed_gate_names(error_message)
+
+            if failure_reason == "strict_gate_failure":
+                try:
+                    report = parse_xml_file(xml_file, config=non_strict_config)
+                    _accumulate_gate_counts(gate_counts, report.gates)
+                    if not failed_gates:
+                        failed_gates = sorted(
+                            gate.name for gate in report.gates if not gate.passed
+                        )
+                except ParseStrictError:
+                    # Defensive fallback: strict disabled should not raise for gate failures.
+                    pass
+
+            failure_reason_counts[failure_reason] += 1
+            failure_file_counts[file_path] += 1
+            failure_reasons_by_file[file_path].add(failure_reason)
+            failure_gates_by_file[file_path].update(failed_gates)
+
+            failure_item: dict[str, object] = {"file": file_path, "error": error_message}
+            if failed_gates:
+                failure_item["failed_gates"] = failed_gates
+            failures.append(failure_item)
         except Exception as exc:  # pragma: no cover - defensive path
-            failures.append({"file": str(xml_file), "error": f"Unexpected error: {exc}"})
+            file_path = str(xml_file)
+            failure_reason = "unexpected_error"
+            failure_reason_counts[failure_reason] += 1
+            failure_file_counts[file_path] += 1
+            failure_reasons_by_file[file_path].add(failure_reason)
+            failures.append({"file": file_path, "error": f"Unexpected error: {exc}"})
 
     summary = {
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "input_dir": str(input_dir),
         "out_dir": str(out_dir),
-        "total_xml_files": len([p for p in xml_files if p.is_file()]),
+        "total_xml_files": len(xml_file_paths),
         "reports_written": reports_written,
         "failures": failures,
+        "gate_pass_fail_counts": {
+            gate_name: gate_counts[gate_name]
+            for gate_name in sorted(gate_counts)
+        },
+        "failure_reason_counts": _sorted_counter(failure_reason_counts),
+        "failure_file_counts": _sorted_counter(failure_file_counts),
+        "failure_file_leaderboard": _build_failure_file_leaderboard(
+            failure_gates_by_file=failure_gates_by_file,
+            failure_reasons_by_file=failure_reasons_by_file,
+            limit=FAILURE_LEADERBOARD_LIMIT,
+        ),
     }
     _write_json_file(summary_out, summary, pretty=args.pretty)
 
