@@ -11,4 +11,6 @@
     <Button id="btnSearch" left="24" top="16" width="88" height="28" text="Search" onclick="fnSearch" />
     <Grid id="grdOrders" left="24" top="56" width="1000" height="560" binddataset="dsOrder" />
   </Contents>
+  <Transaction id="searchOrders" serviceid="SVC_ORDER_SEARCH" url="/api/orders/search" method="POST" />
+  <Script name="fnSearch">transaction('searchOrders');</Script>
 </Screen>

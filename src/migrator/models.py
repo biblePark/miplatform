@@ -63,6 +63,33 @@ class EventIR:
 
 
 @dataclass(slots=True)
+class TransactionIR:
+    node_tag: str
+    node_id: str | None
+    transaction_id: str | None
+    endpoint: str | None
+    method: str | None
+    source: SourceRef
+
+
+@dataclass(slots=True)
+class ScriptBlockIR:
+    node_tag: str
+    node_id: str | None
+    script_name: str | None
+    body: str
+    source: SourceRef
+
+
+@dataclass(slots=True)
+class StructuralMismatch:
+    position_path: str
+    reason: str
+    source_signature: str | None
+    ast_signature: str | None
+
+
+@dataclass(slots=True)
 class UnknownTag:
     tag: str
     node_path: str
@@ -83,6 +110,9 @@ class ParseStats:
     attr_counts: dict[str, int]
     unknown_tags: list[UnknownTag] = field(default_factory=list)
     unknown_attrs: list[UnknownAttr] = field(default_factory=list)
+    roundtrip_mismatches: list[StructuralMismatch] = field(default_factory=list)
+    canonical_source_hash: str | None = None
+    canonical_ast_hash: str | None = None
 
 
 @dataclass(slots=True)
@@ -101,6 +131,8 @@ class ScreenIR:
     datasets: list[DatasetIR] = field(default_factory=list)
     bindings: list[BindingIR] = field(default_factory=list)
     events: list[EventIR] = field(default_factory=list)
+    transactions: list[TransactionIR] = field(default_factory=list)
+    scripts: list[ScriptBlockIR] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -110,6 +142,7 @@ class ParseConfig:
     known_attrs_by_tag: dict[str, set[str]] | None = None
     capture_text: bool = False
     enable_roundtrip_gate: bool = True
+    roundtrip_mismatch_limit: int = 200
 
 
 @dataclass(slots=True)

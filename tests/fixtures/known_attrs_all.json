@@ -5,5 +5,7 @@
   "record": ["order_id", "status"],
   "Button": ["id", "left", "top", "width", "height", "text", "onclick"],
   "Grid": ["id", "left", "top", "width", "height", "binddataset"],
+  "Transaction": ["id", "serviceid", "url", "method"],
+  "Script": ["name"],
   "*": []
 }

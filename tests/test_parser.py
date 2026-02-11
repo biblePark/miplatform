@@ -20,13 +20,15 @@ KNOWN_ATTRS_FILE = FIXTURES_DIR / "known_attrs_all.json"
 
 class TestParser(unittest.TestCase):
     def test_parse_smoke(self) -> None:
-        report = parse_xml_file(FIXTURE, config=ParseConfig(strict=False, capture_text=False))
+        report = parse_xml_file(FIXTURE, config=ParseConfig(strict=False, capture_text=True))
 
         self.assertEqual(report.screen.screen_id, "simple_screen")
-        self.assertEqual(report.stats.total_nodes, 9)
+        self.assertEqual(report.stats.total_nodes, 11)
         self.assertEqual(report.stats.tag_counts["Screen"], 1)
         self.assertEqual(report.stats.tag_counts["Dataset"], 1)
         self.assertEqual(report.stats.tag_counts["Contents"], 1)
+        self.assertEqual(report.stats.tag_counts["Transaction"], 1)
+        self.assertEqual(report.stats.tag_counts["Script"], 1)
         self.assertEqual(report.stats.max_depth, 4)
         self.assertEqual(report.stats.unknown_tags, [])
 
@@ -48,11 +50,27 @@ class TestParser(unittest.TestCase):
         self.assertEqual(report.screen.events[0].event_name, "onclick")
         self.assertEqual(report.screen.events[0].handler, "fnSearch")
 
+        self.assertEqual(len(report.screen.transactions), 1)
+        self.assertEqual(report.screen.transactions[0].transaction_id, "SVC_ORDER_SEARCH")
+        self.assertEqual(report.screen.transactions[0].endpoint, "/api/orders/search")
+        self.assertEqual(report.screen.transactions[0].method, "POST")
+
+        self.assertEqual(len(report.screen.scripts), 1)
+        self.assertEqual(report.screen.scripts[0].script_name, "fnSearch")
+        self.assertIn("transaction('searchOrders')", report.screen.scripts[0].body)
+
+        self.assertTrue(report.stats.canonical_source_hash)
+        self.assertTrue(report.stats.canonical_ast_hash)
+        self.assertEqual(report.stats.roundtrip_mismatches, [])
+
         gate_map = {gate.name: gate for gate in report.gates}
         self.assertTrue(gate_map["roundtrip_structural_diff"].passed)
+        self.assertTrue(gate_map["canonical_roundtrip_hash_match"].passed)
         self.assertTrue(gate_map["dataset_extraction_coverage"].passed)
         self.assertTrue(gate_map["binding_extraction_coverage"].passed)
         self.assertTrue(gate_map["event_extraction_coverage"].passed)
+        self.assertTrue(gate_map["transaction_extraction_coverage"].passed)
+        self.assertTrue(gate_map["script_extraction_coverage"].passed)
 
     def test_strict_unknown_tag_fails(self) -> None:
         config = ParseConfig(
@@ -74,12 +92,16 @@ class TestParser(unittest.TestCase):
                 "Contents",
                 "Button",
                 "Grid",
+                "Transaction",
+                "Script",
             },
             known_attrs_by_tag={
                 "Screen": {"id"},
                 "Dataset": {"id"},
                 "Button": {"id", "text"},
                 "Grid": {"id", "binddataset"},
+                "Transaction": {"id"},
+                "Script": {"name"},
                 "*": set(),
             },
         )
@@ -99,6 +121,7 @@ class TestParser(unittest.TestCase):
             strict=True,
             known_tags=known_tags,
             known_attrs_by_tag=known_attrs,
+            capture_text=True,
         )
         report = parse_xml_file(FIXTURE, config=config)
 

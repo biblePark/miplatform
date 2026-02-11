@@ -30,7 +30,8 @@ This repository is operated as a multi-threaded, round-based project using `git 
 
 - Round 0: Governance and process baseline created.
 - Round 1: Parser bootstrap with strict tag/attr gates and CLI.
-- Round 2: Roundtrip validator + Dataset/Binding/Event IR extraction + extraction coverage gates.
+- Round 2: Roundtrip validator + Dataset/Binding/Event IR extraction + coverage gates.
+- Round 3: Transaction/Script extraction + canonical hash gate + batch parse CLI.
 
 ## Quick Start
 
@@ -40,31 +41,32 @@ Run tests:
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Run parser CLI on fixture:
+Run strict parse on a single XML:
 
 ```bash
-PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report.json --pretty
+PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-Run strict parse with known profiles:
+Run batch parse on a directory:
 
 ```bash
-PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report-strict.json --strict --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+PYTHONPATH=src python3 -m migrator batch-parse tests/fixtures --out-dir out/batch-reports --summary-out out/batch-summary.json --recursive --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-Optional: disable roundtrip gate for diagnosis:
+Optional: disable roundtrip and canonical gates for diagnosis:
 
 ```bash
 PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report-no-roundtrip.json --disable-roundtrip-gate --pretty
 ```
 
-## Implemented Scope (R01-R02)
+## Implemented Scope (R01-R03)
 
 - `pyproject.toml` with Python package entrypoint (`mifl-migrator`).
-- `src/migrator/models.py` with base AST and extraction IR models.
+- `src/migrator/models.py` with AST and extraction IR models.
 - `src/migrator/parser.py` with strict parser + extraction + gate evaluation.
-- `src/migrator/validator.py` with structural roundtrip diff engine.
-- `src/migrator/cli.py` parse command and JSON report output.
-- `tests/` fixtures and parser/validator unit tests.
+- `src/migrator/validator.py` with detailed structural mismatch and canonical hash checks.
+- `src/migrator/canonical.py` with deterministic canonical XML regeneration from XML/AST.
+- `src/migrator/cli.py` with `parse` and `batch-parse` commands.
+- `tests/` fixtures and parser/validator/CLI unit tests.
 
 Code generation and runtime fidelity tooling are planned for subsequent rounds.

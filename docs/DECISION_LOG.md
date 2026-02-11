@@ -83,3 +83,42 @@ Consequences:
 
 - Parser regressions can be detected early with deterministic gates.
 - Semantic behavior equivalence is still pending and requires later transaction/script mapping rounds.
+
+## ADR-0005: Canonical Hash Validation and Detailed Mismatch Reporting
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Structural diff count alone is not enough for diagnosis at ERP scale.
+
+Decision:
+
+- Add path-level mismatch records (`position_path`, reason, source/AST signatures).
+- Add deterministic canonical XML generation for source XML and AST regeneration.
+- Add canonical hash match gate.
+
+Consequences:
+
+- Completeness failures are diagnosable without runtime rendering.
+- Reports become large on highly divergent files; mismatch list is capped by config.
+
+## ADR-0006: Batch Parse as First-Class CLI Capability
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Migration work must run against large XML sets, not only single-screen files.
+
+Decision:
+
+- Add `batch-parse` command with per-file report output and summary JSON.
+- Continue processing all files in a batch and return non-zero when failures exist.
+
+Consequences:
+
+- Enables round-level execution and coverage tracking for large repositories.
+- Requires follow-up rounds for richer aggregated metrics and pipeline integration.
