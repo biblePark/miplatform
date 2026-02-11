@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import sys
 
+from .api_mapping import generate_api_mapping_artifacts
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
 
@@ -102,6 +103,24 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(batch_cmd)
     batch_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    map_api_cmd = subparsers.add_parser(
+        "map-api",
+        help="Map TransactionIR to Express route/service stubs and mapping report",
+    )
+    map_api_cmd.add_argument("xml_path", help="Path to source XML file")
+    map_api_cmd.add_argument(
+        "--out-dir",
+        required=True,
+        help="Directory where generated API route/service stubs are written",
+    )
+    map_api_cmd.add_argument(
+        "--report-out",
+        required=True,
+        help="Output path for mapping report JSON",
+    )
+    _add_common_parse_options(map_api_cmd)
+    map_api_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
+
     return parser
 
 
@@ -158,6 +177,22 @@ def run_batch_parse(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_map_api(args: argparse.Namespace) -> int:
+    config = _build_parse_config(args)
+    report = parse_xml_file(args.xml_path, config=config)
+    mapping_report = generate_api_mapping_artifacts(
+        screen=report.screen,
+        input_xml_path=args.xml_path,
+        out_dir=args.out_dir,
+    )
+    report_out = Path(args.report_out).resolve()
+    _write_json_file(report_out, mapping_report.to_dict(), pretty=args.pretty)
+
+    if mapping_report.summary.mapped_failure > 0:
+        return 2
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -167,6 +202,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_parse(args)
         if args.command == "batch-parse":
             return run_batch_parse(args)
+        if args.command == "map-api":
+            return run_map_api(args)
     except ParseStrictError as exc:
         print(str(exc), file=sys.stderr)
         return 2

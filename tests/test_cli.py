@@ -81,6 +81,80 @@ class TestCli(unittest.TestCase):
             self.assertEqual(len(payload["failures"]), 1)
             self.assertTrue((out_dir / "good.json").exists())
 
+    def test_map_api_generates_route_service_and_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-api"
+            report_out = Path(tmp_dir) / "mapping-report.json"
+            rc = main(
+                [
+                    "map-api",
+                    str(FIXTURE_XML),
+                    "--out-dir",
+                    str(out_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--strict",
+                    "--capture-text",
+                    "--known-tags-file",
+                    str(KNOWN_TAGS),
+                    "--known-attrs-file",
+                    str(KNOWN_ATTRS),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            self.assertTrue(report_out.exists())
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["total_transactions"], 1)
+            self.assertEqual(payload["summary"]["mapped_success"], 1)
+            self.assertEqual(payload["summary"]["mapped_failure"], 0)
+            self.assertEqual(payload["summary"]["unsupported"], 0)
+            self.assertEqual(payload["results"][0]["status"], "success")
+
+            route_file = out_dir / "src" / "routes" / "simple-screen.routes.js"
+            service_file = out_dir / "src" / "services" / "simple-screen.service.js"
+            self.assertTrue(route_file.exists())
+            self.assertTrue(service_file.exists())
+            self.assertIn(
+                'router.post("/api/orders/search"',
+                route_file.read_text(encoding="utf-8"),
+            )
+            self.assertIn(
+                "async function svcOrderSearch(req)",
+                service_file.read_text(encoding="utf-8"),
+            )
+
+    def test_map_api_returns_failure_when_mapping_has_missing_endpoint(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_path = Path(tmp_dir) / "broken.xml"
+            xml_path.write_text(
+                "<Screen id='Broken'><Transaction id='tx1' serviceid='SVC_TX1' method='POST' /></Screen>",
+                encoding="utf-8",
+            )
+            out_dir = Path(tmp_dir) / "generated-api"
+            report_out = Path(tmp_dir) / "mapping-report.json"
+
+            rc = main(
+                [
+                    "map-api",
+                    str(xml_path),
+                    "--out-dir",
+                    str(out_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 2)
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["summary"]["total_transactions"], 1)
+            self.assertEqual(payload["summary"]["mapped_success"], 0)
+            self.assertEqual(payload["summary"]["mapped_failure"], 1)
+            self.assertEqual(payload["summary"]["unsupported"], 0)
+            self.assertEqual(payload["results"][0]["reason"], "missing_endpoint")
+
 
 if __name__ == "__main__":
     unittest.main()
