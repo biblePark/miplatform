@@ -8,8 +8,7 @@
     <record order_id="A-100" status="PAID" />
   </Dataset>
   <Contents>
-    <Button id="btnSearch" left="24" top="16" width="88" height="28" text="Search" />
+    <Button id="btnSearch" left="24" top="16" width="88" height="28" text="Search" onclick="fnSearch" />
     <Grid id="grdOrders" left="24" top="56" width="1000" height="560" binddataset="dsOrder" />
   </Contents>
 </Screen>
-

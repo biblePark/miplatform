@@ -22,6 +22,47 @@ class AstNode:
 
 
 @dataclass(slots=True)
+class DatasetColumnIR:
+    column_id: str | None
+    data_type: str | None
+    attributes: dict[str, str]
+    source: SourceRef
+
+
+@dataclass(slots=True)
+class DatasetRecordIR:
+    values: dict[str, str]
+    source: SourceRef
+
+
+@dataclass(slots=True)
+class DatasetIR:
+    dataset_id: str | None
+    attributes: dict[str, str]
+    columns: list[DatasetColumnIR] = field(default_factory=list)
+    records: list[DatasetRecordIR] = field(default_factory=list)
+    source: SourceRef | None = None
+
+
+@dataclass(slots=True)
+class BindingIR:
+    node_tag: str
+    node_id: str | None
+    binding_key: str
+    binding_value: str
+    source: SourceRef
+
+
+@dataclass(slots=True)
+class EventIR:
+    node_tag: str
+    node_id: str | None
+    event_name: str
+    handler: str
+    source: SourceRef
+
+
+@dataclass(slots=True)
 class UnknownTag:
     tag: str
     node_path: str
@@ -57,6 +98,9 @@ class ValidationGate:
 class ScreenIR:
     screen_id: str
     root: AstNode
+    datasets: list[DatasetIR] = field(default_factory=list)
+    bindings: list[BindingIR] = field(default_factory=list)
+    events: list[EventIR] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -65,6 +109,7 @@ class ParseConfig:
     known_tags: set[str] | None = None
     known_attrs_by_tag: dict[str, set[str]] | None = None
     capture_text: bool = False
+    enable_roundtrip_gate: bool = True
 
 
 @dataclass(slots=True)
@@ -78,4 +123,3 @@ class ParseReport:
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
-

@@ -29,9 +29,10 @@ This repository is operated as a multi-threaded, round-based project using `git 
 ## Current Implementation Status
 
 - Round 0: Governance and process baseline created.
-- Round 1: Parser bootstrap created with strict gate plumbing, IR dataclasses, CLI, and tests.
+- Round 1: Parser bootstrap with strict tag/attr gates and CLI.
+- Round 2: Roundtrip validator + Dataset/Binding/Event IR extraction + extraction coverage gates.
 
-## Round 1 Quick Start
+## Quick Start
 
 Run tests:
 
@@ -45,20 +46,25 @@ Run parser CLI on fixture:
 PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report.json --pretty
 ```
 
-Run strict parse with profiles:
+Run strict parse with known profiles:
 
 ```bash
 PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report-strict.json --strict --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-## Round 1 Scope
+Optional: disable roundtrip gate for diagnosis:
 
-Round 1 establishes parser execution baseline only:
+```bash
+PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report-no-roundtrip.json --disable-roundtrip-gate --pretty
+```
+
+## Implemented Scope (R01-R02)
 
 - `pyproject.toml` with Python package entrypoint (`mifl-migrator`).
-- `src/migrator/models.py` for base IR and validation gate structures.
-- `src/migrator/parser.py` for strict parser bootstrap.
-- `src/migrator/cli.py` for parse command and JSON report output.
-- `tests/` fixtures and smoke/strict tests.
+- `src/migrator/models.py` with base AST and extraction IR models.
+- `src/migrator/parser.py` with strict parser + extraction + gate evaluation.
+- `src/migrator/validator.py` with structural roundtrip diff engine.
+- `src/migrator/cli.py` parse command and JSON report output.
+- `tests/` fixtures and parser/validator unit tests.
 
 Code generation and runtime fidelity tooling are planned for subsequent rounds.

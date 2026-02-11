@@ -3,7 +3,7 @@
   "Dataset": ["id"],
   "column": ["id", "type"],
   "record": ["order_id", "status"],
-  "Button": ["id", "left", "top", "width", "height", "text"],
+  "Button": ["id", "left", "top", "width", "height", "text", "onclick"],
   "Grid": ["id", "left", "top", "width", "height", "binddataset"],
   "*": []
 }

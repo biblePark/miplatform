@@ -46,6 +46,11 @@ def build_parser() -> argparse.ArgumentParser:
         "--known-attrs-file",
         help="Optional JSON map: {\"TagName\": [\"attr1\"], \"*\": [\"globalAttr\"]}",
     )
+    parse_cmd.add_argument(
+        "--disable-roundtrip-gate",
+        action="store_true",
+        help="Disable roundtrip structural diff gate",
+    )
     parse_cmd.add_argument("--pretty", action="store_true", help="Pretty-print output JSON")
 
     return parser
@@ -57,6 +62,7 @@ def run_parse(args: argparse.Namespace) -> int:
         known_tags=_load_known_tags(args.known_tags_file),
         known_attrs_by_tag=_load_known_attrs(args.known_attrs_file),
         capture_text=args.capture_text,
+        enable_roundtrip_gate=not args.disable_roundtrip_gate,
     )
     report = parse_xml_file(args.xml_path, config=config)
 
@@ -90,4 +96,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

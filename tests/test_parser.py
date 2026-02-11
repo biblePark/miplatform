@@ -35,6 +35,25 @@ class TestParser(unittest.TestCase):
         self.assertEqual(root.children[0].source.node_path, "/Screen[1]/Dataset[1]")
         self.assertEqual(root.children[1].source.node_path, "/Screen[1]/Contents[1]")
 
+        self.assertEqual(len(report.screen.datasets), 1)
+        self.assertEqual(report.screen.datasets[0].dataset_id, "dsOrder")
+        self.assertEqual(len(report.screen.datasets[0].columns), 2)
+        self.assertEqual(len(report.screen.datasets[0].records), 1)
+
+        self.assertEqual(len(report.screen.bindings), 1)
+        self.assertEqual(report.screen.bindings[0].binding_key, "binddataset")
+        self.assertEqual(report.screen.bindings[0].binding_value, "dsOrder")
+
+        self.assertEqual(len(report.screen.events), 1)
+        self.assertEqual(report.screen.events[0].event_name, "onclick")
+        self.assertEqual(report.screen.events[0].handler, "fnSearch")
+
+        gate_map = {gate.name: gate for gate in report.gates}
+        self.assertTrue(gate_map["roundtrip_structural_diff"].passed)
+        self.assertTrue(gate_map["dataset_extraction_coverage"].passed)
+        self.assertTrue(gate_map["binding_extraction_coverage"].passed)
+        self.assertTrue(gate_map["event_extraction_coverage"].passed)
+
     def test_strict_unknown_tag_fails(self) -> None:
         config = ParseConfig(
             strict=True,

@@ -28,27 +28,20 @@ Minimum entities:
 
 ## 3) Validation Gates
 
-Coverage gates:
+Current implemented gates (R02):
 
-- Unknown tag count must be `0`.
-- Unknown attribute count must be `0`.
-- Unmapped event count must be `0`.
-- Unmapped transaction count must be `0`.
-- Unmapped script block count must be `0`.
+- `unknown_tag_count` (`expected=0`)
+- `unknown_attr_count` (`expected=0`)
+- `roundtrip_structural_diff` (`expected=0`)
+- `dataset_extraction_coverage` (`value == expected`)
+- `binding_extraction_coverage` (`value == expected`)
+- `event_extraction_coverage` (`value == expected`)
 
-Roundtrip gate:
+Planned additional gates:
 
-- `XML -> AST -> Canonical XML` structural diff must be `0` except approved normalizations.
-
-Fidelity gates:
-
-- Tree hash parity for component hierarchy.
-- Layout signature parity for position/size/z-order.
-- Binding signature parity for dataset-field mapping.
-
-Traceability gate:
-
-- 100% of generated UI/API artifacts include source references.
+- transaction mapping coverage
+- script block mapping coverage
+- layout signature parity
 
 ## 4) Generated Output Shape
 
@@ -78,23 +71,26 @@ Planned structure:
 - Python unit tests for parser and validator
 - JavaScript tests for generated frontend/API contracts
 
-## 7) Round 1 Implemented Contract
+## 7) Implemented Contract (R01-R02)
 
 Python package:
 
-- `src/migrator/models.py`: `SourceRef`, `AstNode`, `ScreenIR`, `ParseStats`, `ValidationGate`, `ParseReport`
-- `src/migrator/parser.py`: strict parser bootstrap and unknown tag/attr gate evaluation
-- `src/migrator/cli.py`: command-line interface
+- `src/migrator/models.py`:
+- `SourceRef`, `AstNode`, `ScreenIR`, `ParseStats`, `ValidationGate`, `ParseReport`
+- `DatasetIR`, `DatasetColumnIR`, `DatasetRecordIR`, `BindingIR`, `EventIR`
+- `src/migrator/parser.py`:
+- strict parser bootstrap
+- unknown tag/attr checks
+- IR extraction for dataset/binding/event
+- strict gate evaluation
+- `src/migrator/validator.py`:
+- structural roundtrip diff between source XML tree and AST
+- `src/migrator/cli.py`:
+- `parse` command with report output
 
 CLI contract:
 
-- `mifl-migrator parse <xml_path> --out <report.json> [--strict] [--capture-text] [--known-tags-file <txt>] [--known-attrs-file <json>] [--pretty]`
-
-Gate behavior in bootstrap:
-
-- `unknown_tag_count`
-- `unknown_attr_count`
-- `--strict` returns non-zero exit code when any gate fails.
+- `mifl-migrator parse <xml_path> --out <report.json> [--strict] [--capture-text] [--known-tags-file <txt>] [--known-attrs-file <json>] [--disable-roundtrip-gate] [--pretty]`
 
 Known-profile inputs:
 

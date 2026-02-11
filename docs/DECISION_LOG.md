@@ -63,3 +63,23 @@ Consequences:
 
 - Faster bootstrap and simpler local execution.
 - Source line fidelity may be limited in bootstrap mode and should be improved in subsequent rounds.
+
+## ADR-0004: Structural Roundtrip Diff as First Completeness Proof
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Runtime visual comparison may not be available during migration.
+- A direct structural completeness proof is needed before code generation.
+
+Decision:
+
+- Introduce roundtrip structural diff between source XML tree and parsed AST.
+- Add extraction coverage gates for `Dataset`, binding attributes (`bind*`), and event points (`on*` and `Event` nodes).
+
+Consequences:
+
+- Parser regressions can be detected early with deterministic gates.
+- Semantic behavior equivalence is still pending and requires later transaction/script mapping rounds.
