@@ -1,0 +1,56 @@
+{
+  "round_id": "R08",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "cd preview-host && npm run build"
+  ],
+  "lanes": [
+    {
+      "name": "ui-layout-fidelity-pass",
+      "branch_name": "codex/r08-ui-layout-fidelity-pass",
+      "worktree_path": "/tmp/miflatform-r08-ui-layout-fidelity-pass",
+      "objective": "Increase generated UI fidelity by improving position/size/style mapping for core widgets while preserving trace metadata.",
+      "deliverables": [
+        "Refine src/migrator/ui_codegen.py layout/style mapping rules for core widgets and containers",
+        "Keep deterministic generation and fallback warning behavior",
+        "Add/extend tests for layout/style serialization and widget output assertions",
+        "Document known fidelity gaps and constraints in lane handoff"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "runtime-behavior-wiring",
+      "branch_name": "codex/r08-runtime-behavior-wiring",
+      "worktree_path": "/tmp/miflatform-r08-runtime-behavior-wiring",
+      "objective": "Connect generated UI components to generated behavior store/actions with deterministic import/use contracts.",
+      "deliverables": [
+        "Define and implement deterministic integration contract between gen-ui outputs and gen-behavior-store outputs",
+        "Add generated wiring hooks/imports without breaking existing scaffold generation",
+        "Add tests that validate wiring artifacts and duplicate-safe naming integration",
+        "Update technical/user docs if command outputs or verification flow changes"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    },
+    {
+      "name": "real-sample-e2e-regression",
+      "branch_name": "codex/r08-real-sample-e2e-regression",
+      "worktree_path": "/tmp/miflatform-r08-real-sample-e2e-regression",
+      "objective": "Automate real-sample migrate-e2e regression and report extraction/mapping/fidelity risk trends.",
+      "deliverables": [
+        "Add script/command flow to execute migrate-e2e across agreed real XML sample set",
+        "Produce consolidated regression summary report (success/failure counts, stage-level failures, top warnings)",
+        "Update docs for real-sample validation workflow and artifact locations",
+        "Capture unresolved malformed/XML parsing blockers explicitly in handoff"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    }
+  ]
+}
