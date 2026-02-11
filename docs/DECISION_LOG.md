@@ -122,3 +122,24 @@ Consequences:
 
 - Enables round-level execution and coverage tracking for large repositories.
 - Requires follow-up rounds for richer aggregated metrics and pipeline integration.
+
+## ADR-0007: Standardized Subagent Templates and Lane Orchestration
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Parallel rounds require consistent assignments, handoffs, and merge criteria.
+- Ad-hoc instructions increase omission and integration risk.
+
+Decision:
+
+- Add canonical subagent templates under `/docs/multi-agent/`.
+- Add round config example under `/ops/subagents/`.
+- Add automation scripts for lane setup and brief generation under `/scripts/`.
+
+Consequences:
+
+- PM can dispatch parallel lanes faster with consistent quality.
+- Requires round config maintenance to keep templates aligned with real scope.

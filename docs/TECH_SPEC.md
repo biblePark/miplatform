@@ -109,3 +109,20 @@ Known-profile inputs:
 
 - Tag profile file: newline-delimited tag names
 - Attribute profile file: JSON map like `{ "Screen": ["id"], "*": ["commonAttr"] }`
+
+## 8) Multi-Agent Operational Contract (R04)
+
+Parallel round support artifacts:
+
+- Templates: `/docs/multi-agent/`
+- Example lane config: `/ops/subagents/example_round_r04.json`
+- Worktree setup script: `/scripts/setup_round_parallel.sh`
+- Brief rendering script: `/scripts/render_subagent_briefs.py`
+
+Expected PM flow:
+
+1. Define lane config JSON.
+2. Generate lane briefs.
+3. Create lane worktrees.
+4. Dispatch briefs and collect handoffs.
+5. Merge by checklist and rerun full gates.

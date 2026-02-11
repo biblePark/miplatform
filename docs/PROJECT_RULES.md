@@ -2,19 +2,19 @@
 
 ## 1) Migration Integrity Is Mandatory
 
-- No silent fallback and no silent drop of XML nodes, attributes, datasets, events, or scripts.
+- No silent fallback and no silent drop of XML nodes, attributes, datasets, events, scripts, or transactions.
 - Unsupported constructs must fail with explicit diagnostics.
 - Every source node must remain traceable in transformed artifacts.
 
 ## 2) Validation Is a Release Gate
 
-- Conversion is not "done" unless validation gates pass.
-- Mandatory gates:
+- Conversion is not done unless validation gates pass.
+- Mandatory gates include:
 - `unknown_tag_count == 0`
 - `unknown_attr_count == 0`
-- `roundtrip_structural_diff == 0` for canonicalized XML
-- `event_mapping_coverage == 100%`
-- `transaction_mapping_coverage == 100%`
+- `roundtrip_structural_diff == 0`
+- `canonical_roundtrip_hash_match == true`
+- extraction coverage gates for dataset/binding/event/transaction/script
 
 ## 3) Source of Truth
 
@@ -30,18 +30,25 @@
 ## 5) Round-Based Delivery
 
 - Work happens by rounds.
-- One round equals one branch and one dedicated worktree.
+- One round can include multiple parallel lanes.
 - Merge only after gates pass and history is updated.
 
 ## 6) Branch Naming Convention
 
 - Prefix is always `codex/`.
-- Pattern: `codex/r<round-number>-<short-scope>`
+- Pattern: `codex/r<round-number>-<short-scope>`.
 - Examples:
 - `codex/r01-parser-bootstrap`
-- `codex/r02-ir-schema`
+- `codex/r04-api-mapping`
 
-## 7) Documentation Discipline
+## 7) Multi-Agent Governance
+
+- Every lane must have a written assignment template.
+- Every lane must return a handoff document before integration.
+- PM must use merge checklist before final merge.
+- Canonical templates live under `/docs/multi-agent/`.
+
+## 8) Documentation Discipline
 
 - Any rule change updates:
 - `/docs/PROJECT_RULES.md`

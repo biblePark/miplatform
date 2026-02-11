@@ -1,0 +1,38 @@
+{
+  "round_id": "R04",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+  ],
+  "lanes": [
+    {
+      "name": "api-mapping",
+      "branch_name": "codex/r04-api-mapping",
+      "worktree_path": "/tmp/miflatform-r04-api-mapping",
+      "objective": "Implement transaction IR to Express route/service mapping draft.",
+      "deliverables": [
+        "Mapping module scaffold under src/migrator/",
+        "Unit tests for transaction mapping",
+        "Tech spec update for API mapping contract"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "ui-preview",
+      "branch_name": "codex/r04-ui-preview",
+      "worktree_path": "/tmp/miflatform-r04-ui-preview",
+      "objective": "Create preview host skeleton strategy doc and route manifest contract.",
+      "deliverables": [
+        "Preview host plan doc",
+        "Route manifest schema draft",
+        "Round history and decision updates"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    }
+  ]
+}
+

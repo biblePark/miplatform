@@ -22,6 +22,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - `/docs/TECH_SPEC.md`: Core architecture and validation design.
 - `/docs/CODE_STYLE.md`: Code and repository style standards.
 - `/docs/WORKTREE_RUNBOOK.md`: Multi-threaded round workflow with `git worktree`.
+- `/docs/multi-agent/README.md`: Templates and workflow for subagent coordination.
 - `/docs/ROUND_HISTORY.md`: Execution history by round.
 - `/docs/ROUND_TEMPLATE.md`: Template for adding a new round entry.
 - `/docs/DECISION_LOG.md`: ADR-style decision records.
@@ -32,6 +33,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 1: Parser bootstrap with strict tag/attr gates and CLI.
 - Round 2: Roundtrip validator + Dataset/Binding/Event IR extraction + coverage gates.
 - Round 3: Transaction/Script extraction + canonical hash gate + batch parse CLI.
+- Round 4: Multi-agent operation pack (subagent templates + lane setup/brief scripts).
 
 ## Quick Start
 
@@ -41,32 +43,42 @@ Run tests:
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
-Run strict parse on a single XML:
+Run strict parse on one XML:
 
 ```bash
 PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-Run batch parse on a directory:
+Run batch parse:
 
 ```bash
 PYTHONPATH=src python3 -m migrator batch-parse tests/fixtures --out-dir out/batch-reports --summary-out out/batch-summary.json --recursive --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-Optional: disable roundtrip and canonical gates for diagnosis:
+Generate subagent briefs from config:
 
 ```bash
-PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report-no-roundtrip.json --disable-roundtrip-gate --pretty
+scripts/render_subagent_briefs.py --config ops/subagents/example_round_r04.json --out-dir out/subagent-briefs-r04
 ```
 
-## Implemented Scope (R01-R03)
+Preview parallel lane worktrees without creating them:
 
-- `pyproject.toml` with Python package entrypoint (`mifl-migrator`).
-- `src/migrator/models.py` with AST and extraction IR models.
-- `src/migrator/parser.py` with strict parser + extraction + gate evaluation.
-- `src/migrator/validator.py` with detailed structural mismatch and canonical hash checks.
-- `src/migrator/canonical.py` with deterministic canonical XML regeneration from XML/AST.
-- `src/migrator/cli.py` with `parse` and `batch-parse` commands.
-- `tests/` fixtures and parser/validator/CLI unit tests.
+```bash
+scripts/setup_round_parallel.sh --dry-run r04 main api-mapping ui-preview
+```
+
+Create parallel lane worktrees:
+
+```bash
+scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
+```
+
+## Implemented Scope (R01-R04)
+
+- Parser, validator, canonicalizer, and CLI pipeline under `src/migrator/`.
+- Unit tests for parser/validator/CLI under `tests/`.
+- Multi-agent templates under `docs/multi-agent/`.
+- Subagent config examples under `ops/subagents/`.
+- Parallel setup and brief rendering scripts under `scripts/`.
 
 Code generation and runtime fidelity tooling are planned for subsequent rounds.
