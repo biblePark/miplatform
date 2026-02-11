@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 import re
 from typing import Any
+from urllib.parse import urlsplit
 
 from .models import ScreenIR, SourceRef, TransactionIR
 
@@ -15,6 +16,8 @@ MAPPING_STATUS_UNSUPPORTED = "unsupported"
 
 SUPPORTED_HTTP_METHODS = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 _NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
+_MULTI_SLASH = re.compile(r"/{2,}")
+DUPLICATE_ROUTE_POLICY = "route_key(method, normalized_endpoint):first_seen_wins"
 
 
 @dataclass(slots=True)
@@ -37,6 +40,8 @@ class TransactionApiMapping:
     route_method: str | None = None
     route_path: str | None = None
     service_function: str | None = None
+    duplicate_of_index: int | None = None
+    duplicate_of_transaction_id: str | None = None
     source: SourceRef | None = None
 
 
@@ -54,6 +59,7 @@ class ApiMappingReport:
     service_file: str
     summary: ApiMappingSummary
     results: list[TransactionApiMapping]
+    duplicate_policy: str = DUPLICATE_ROUTE_POLICY
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
@@ -68,14 +74,41 @@ def _normalize_method(method: str | None) -> str | None:
     return normalized or None
 
 
-def _normalize_endpoint(endpoint: str | None) -> str | None:
+def _normalize_script_endpoint(endpoint: str) -> str:
+    normalized = endpoint.strip()
+
+    if "::" in normalized and "://" not in normalized:
+        namespace, _, remainder = normalized.partition("::")
+        namespace = namespace.strip().strip("/")
+        remainder = remainder.strip().lstrip("/")
+        normalized = "/".join(part for part in (namespace, remainder) if part)
+
+    parsed = urlsplit(normalized)
+    if parsed.scheme and parsed.netloc:
+        normalized = parsed.path or "/"
+
+    return normalized
+
+
+def _normalize_endpoint(endpoint: str | None, *, node_tag: str | None = None) -> str | None:
     if endpoint is None:
         return None
     normalized = endpoint.strip()
     if not normalized:
         return None
+
+    if (node_tag or "").lower() == "scripttransactioncall":
+        normalized = _normalize_script_endpoint(normalized)
+
+    normalized = normalized.replace("\\", "/")
+    normalized = normalized.split("?", 1)[0].split("#", 1)[0].strip()
+    if not normalized:
+        return None
     if not normalized.startswith("/"):
-        return f"/{normalized}"
+        normalized = f"/{normalized}"
+    normalized = _MULTI_SLASH.sub("/", normalized)
+    if len(normalized) > 1 and normalized.endswith("/"):
+        normalized = normalized.rstrip("/")
     return normalized
 
 
@@ -102,6 +135,22 @@ def _allocate_unique_identifier(base: str, used: set[str]) -> str:
         suffix += 1
     used.add(candidate)
     return candidate
+
+
+def _service_name_seed(
+    transaction: TransactionIR,
+    *,
+    index: int,
+    method: str,
+    endpoint: str,
+) -> str:
+    base_id = transaction.transaction_id or transaction.node_id
+    if transaction.node_tag == "ScriptTransactionCall":
+        endpoint_seed = endpoint.lstrip("/") or f"transaction_{index}"
+        if base_id:
+            return f"{base_id}_{method}_{endpoint_seed}"
+        return f"{method}_{endpoint_seed}"
+    return base_id or f"transaction_{index}"
 
 
 def _render_route_stub(service_stem: str, mapped: list[TransactionApiMapping]) -> str:
@@ -191,7 +240,7 @@ def _build_warning_messages(summary: ApiMappingSummary) -> list[str]:
 
 def plan_transaction_api_mapping(transactions: list[TransactionIR]) -> ApiMappingPlan:
     results: list[TransactionApiMapping] = []
-    used_route_keys: set[tuple[str, str]] = set()
+    used_route_keys: dict[tuple[str, str], TransactionApiMapping] = {}
     used_service_functions: set[str] = set()
     mapped_success = 0
     mapped_failure = 0
@@ -199,7 +248,7 @@ def plan_transaction_api_mapping(transactions: list[TransactionIR]) -> ApiMappin
 
     for index, transaction in enumerate(transactions, start=1):
         method = _normalize_method(transaction.method)
-        endpoint = _normalize_endpoint(transaction.endpoint)
+        endpoint = _normalize_endpoint(transaction.endpoint, node_tag=transaction.node_tag)
 
         if endpoint is None:
             mapped_failure += 1
@@ -251,6 +300,7 @@ def plan_transaction_api_mapping(transactions: list[TransactionIR]) -> ApiMappin
 
         route_key = (method, endpoint)
         if route_key in used_route_keys:
+            winner = used_route_keys[route_key]
             mapped_failure += 1
             results.append(
                 TransactionApiMapping(
@@ -263,14 +313,18 @@ def plan_transaction_api_mapping(transactions: list[TransactionIR]) -> ApiMappin
                     reason=f"duplicate_route:{method}:{endpoint}",
                     route_method=method.lower(),
                     route_path=endpoint,
+                    duplicate_of_index=winner.index,
+                    duplicate_of_transaction_id=winner.transaction_id,
                     source=transaction.source,
                 )
             )
             continue
 
-        used_route_keys.add(route_key)
-        raw_function_name = (
-            transaction.transaction_id or transaction.node_id or f"transaction_{index}"
+        raw_function_name = _service_name_seed(
+            transaction,
+            index=index,
+            method=method,
+            endpoint=endpoint,
         )
         service_function = _allocate_unique_identifier(
             _to_js_identifier(raw_function_name, fallback=f"transaction{index}"),
@@ -278,21 +332,21 @@ def plan_transaction_api_mapping(transactions: list[TransactionIR]) -> ApiMappin
         )
 
         mapped_success += 1
-        results.append(
-            TransactionApiMapping(
-                index=index,
-                transaction_id=transaction.transaction_id,
-                node_id=transaction.node_id,
-                endpoint=endpoint,
-                method=method,
-                status=MAPPING_STATUS_SUCCESS,
-                reason=None,
-                route_method=method.lower(),
-                route_path=endpoint,
-                service_function=service_function,
-                source=transaction.source,
-            )
+        mapping = TransactionApiMapping(
+            index=index,
+            transaction_id=transaction.transaction_id,
+            node_id=transaction.node_id,
+            endpoint=endpoint,
+            method=method,
+            status=MAPPING_STATUS_SUCCESS,
+            reason=None,
+            route_method=method.lower(),
+            route_path=endpoint,
+            service_function=service_function,
+            source=transaction.source,
         )
+        results.append(mapping)
+        used_route_keys[route_key] = mapping
 
     summary = ApiMappingSummary(
         total_transactions=len(transactions),
