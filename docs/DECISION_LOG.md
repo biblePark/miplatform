@@ -44,3 +44,22 @@ Consequences:
 - Better isolation and rollback safety.
 - Requires disciplined history/document updates each round.
 
+## ADR-0003: Python Standard Library First for Parser Bootstrap
+
+- Date: `2026-02-11`
+- Status: Accepted
+
+Context:
+
+- Round 1 goal is to establish a deterministic parser/IR/CLI baseline quickly.
+- External dependency adoption can slow bootstrap and increase setup variance.
+
+Decision:
+
+- Build parser bootstrap on `xml.etree.ElementTree` first.
+- Keep parser interfaces and models ready to swap parser backend (for example to `lxml`) in later rounds.
+
+Consequences:
+
+- Faster bootstrap and simpler local execution.
+- Source line fidelity may be limited in bootstrap mode and should be improved in subsequent rounds.

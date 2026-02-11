@@ -1,0 +1,9 @@
+{
+  "Screen": ["id", "width", "height"],
+  "Dataset": ["id"],
+  "column": ["id", "type"],
+  "record": ["order_id", "status"],
+  "Button": ["id", "left", "top", "width", "height", "text"],
+  "Grid": ["id", "left", "top", "width", "height", "binddataset"],
+  "*": []
+}

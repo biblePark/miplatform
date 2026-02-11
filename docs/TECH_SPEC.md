@@ -78,3 +78,25 @@ Planned structure:
 - Python unit tests for parser and validator
 - JavaScript tests for generated frontend/API contracts
 
+## 7) Round 1 Implemented Contract
+
+Python package:
+
+- `src/migrator/models.py`: `SourceRef`, `AstNode`, `ScreenIR`, `ParseStats`, `ValidationGate`, `ParseReport`
+- `src/migrator/parser.py`: strict parser bootstrap and unknown tag/attr gate evaluation
+- `src/migrator/cli.py`: command-line interface
+
+CLI contract:
+
+- `mifl-migrator parse <xml_path> --out <report.json> [--strict] [--capture-text] [--known-tags-file <txt>] [--known-attrs-file <json>] [--pretty]`
+
+Gate behavior in bootstrap:
+
+- `unknown_tag_count`
+- `unknown_attr_count`
+- `--strict` returns non-zero exit code when any gate fails.
+
+Known-profile inputs:
+
+- Tag profile file: newline-delimited tag names
+- Attribute profile file: JSON map like `{ "Screen": ["id"], "*": ["commonAttr"] }`

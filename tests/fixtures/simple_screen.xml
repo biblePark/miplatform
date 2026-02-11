@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Screen id="OrderMain" width="1280" height="720">
+  <Dataset id="dsOrder">
+    <colinfo>
+      <column id="order_id" type="string" />
+      <column id="status" type="string" />
+    </colinfo>
+    <record order_id="A-100" status="PAID" />
+  </Dataset>
+  <Contents>
+    <Button id="btnSearch" left="24" top="16" width="88" height="28" text="Search" />
+    <Grid id="grdOrders" left="24" top="56" width="1000" height="560" binddataset="dsOrder" />
+  </Contents>
+</Screen>
+
