@@ -17,7 +17,7 @@ from migrator.validator import (  # noqa: E402
 )
 
 
-FIXTURE = Path(__file__).parent / "fixtures" / "simple_screen.xml"
+FIXTURE = Path(__file__).parent / "fixtures" / "simple_screen_fixture.txt"
 
 
 class TestValidator(unittest.TestCase):

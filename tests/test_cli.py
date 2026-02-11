@@ -14,7 +14,7 @@ from migrator.cli import main  # noqa: E402
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-FIXTURE_XML = FIXTURES_DIR / "simple_screen.xml"
+FIXTURE_XML = FIXTURES_DIR / "simple_screen_fixture.txt"
 KNOWN_TAGS = FIXTURES_DIR / "known_tags_all.txt"
 KNOWN_ATTRS = FIXTURES_DIR / "known_attrs_all.json"
 
@@ -188,8 +188,8 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["summary"]["unsupported"], 0)
             self.assertEqual(payload["results"][0]["status"], "success")
 
-            route_file = out_dir / "src" / "routes" / "simple-screen.routes.js"
-            service_file = out_dir / "src" / "services" / "simple-screen.service.js"
+            route_file = out_dir / "src" / "routes" / "simple-screen-fixture.routes.js"
+            service_file = out_dir / "src" / "services" / "simple-screen-fixture.service.js"
             self.assertTrue(route_file.exists())
             self.assertTrue(service_file.exists())
             self.assertIn(

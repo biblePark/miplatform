@@ -24,7 +24,7 @@ from migrator.models import (  # noqa: E402
 from migrator.parser import parse_xml_file  # noqa: E402
 
 
-FIXTURE_XML = Path(__file__).parent / "fixtures" / "simple_screen.xml"
+FIXTURE_XML = Path(__file__).parent / "fixtures" / "simple_screen_fixture.txt"
 
 
 def _src(path: str) -> SourceRef:

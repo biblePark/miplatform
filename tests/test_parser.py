@@ -14,7 +14,7 @@ from migrator.parser import ParseStrictError, parse_xml_file  # noqa: E402
 
 
 FIXTURES_DIR = Path(__file__).parent / "fixtures"
-FIXTURE = FIXTURES_DIR / "simple_screen.xml"
+FIXTURE = FIXTURES_DIR / "simple_screen_fixture.txt"
 KNOWN_TAGS_FILE = FIXTURES_DIR / "known_tags_all.txt"
 KNOWN_ATTRS_FILE = FIXTURES_DIR / "known_attrs_all.json"
 
@@ -23,7 +23,7 @@ class TestParser(unittest.TestCase):
     def test_parse_smoke(self) -> None:
         report = parse_xml_file(FIXTURE, config=ParseConfig(strict=False, capture_text=True))
 
-        self.assertEqual(report.screen.screen_id, "simple_screen")
+        self.assertEqual(report.screen.screen_id, "simple_screen_fixture")
         self.assertEqual(report.stats.total_nodes, 11)
         self.assertEqual(report.stats.tag_counts["Screen"], 1)
         self.assertEqual(report.stats.tag_counts["Dataset"], 1)

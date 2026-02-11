@@ -47,7 +47,7 @@ python3 -m unittest discover -s tests -p 'test_*.py' -v
 Run strict parse on one XML:
 
 ```bash
-PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen.xml --out out/parse-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+PYTHONPATH=src python3 -m migrator parse tests/fixtures/simple_screen_fixture.txt --out out/parse-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
 Run batch parse:
@@ -59,7 +59,7 @@ PYTHONPATH=src python3 -m migrator batch-parse tests/fixtures --out-dir out/batc
 Run API mapping scaffold generation:
 
 ```bash
-PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen.xml --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+PYTHONPATH=src python3 -m migrator map-api tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-api --report-out out/map-api-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
 Example `out/batch-summary.json` (trimmed):

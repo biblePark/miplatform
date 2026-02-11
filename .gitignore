@@ -15,4 +15,16 @@ dist/
 # Generated outputs
 generated/
 out/
+data/
 
+# Node / Vite
+node_modules/
+preview-host/.vite/
+preview-host/*.tsbuildinfo
+preview-host/vite.config.js
+preview-host/vite.config.d.ts
+coverage/
+.DS_Store
+
+# Legacy source inputs
+*.xml
