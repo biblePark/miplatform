@@ -55,6 +55,55 @@ Run batch parse:
 PYTHONPATH=src python3 -m migrator batch-parse tests/fixtures --out-dir out/batch-reports --summary-out out/batch-summary.json --recursive --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
+Example `out/batch-summary.json` (trimmed):
+
+```json
+{
+  "generated_at_utc": "2026-02-11T00:00:00+00:00",
+  "input_dir": "/abs/path/tests/fixtures",
+  "out_dir": "/abs/path/out/batch-reports",
+  "total_xml_files": 3,
+  "reports_written": 1,
+  "failures": [
+    {
+      "file": "/abs/path/tests/fixtures/strict_fail.xml",
+      "error": "Strict parse failed for gates: unknown_tag_count",
+      "failed_gates": ["unknown_tag_count"]
+    },
+    {
+      "file": "/abs/path/tests/fixtures/broken.xml",
+      "error": "XML parse failure: mismatched tag: line 3, column 2"
+    }
+  ],
+  "gate_pass_fail_counts": {
+    "unknown_tag_count": { "pass_count": 1, "fail_count": 1 },
+    "canonical_roundtrip_hash_match": { "pass_count": 2, "fail_count": 0 }
+  },
+  "failure_reason_counts": {
+    "strict_gate_failure": 1,
+    "xml_parse_failure": 1
+  },
+  "failure_file_counts": {
+    "/abs/path/tests/fixtures/strict_fail.xml": 1,
+    "/abs/path/tests/fixtures/broken.xml": 1
+  },
+  "failure_file_leaderboard": [
+    {
+      "file": "/abs/path/tests/fixtures/strict_fail.xml",
+      "failed_gate_count": 1,
+      "failed_gates": ["unknown_tag_count"],
+      "failure_reasons": ["strict_gate_failure"]
+    },
+    {
+      "file": "/abs/path/tests/fixtures/broken.xml",
+      "failed_gate_count": 0,
+      "failed_gates": [],
+      "failure_reasons": ["xml_parse_failure"]
+    }
+  ]
+}
+```
+
 Generate subagent briefs from config:
 
 ```bash
