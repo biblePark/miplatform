@@ -79,6 +79,11 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 
 - 통합 리포트 `overall_status`, `overall_exit_code`
 - `stages`별 상태(`parse`, `map_api`, `gen_ui`, `fidelity_audit`, `sync_preview`)
+- `stages.gen_ui` 이벤트 wiring 지표:
+- `wired_event_bindings`
+- `total_event_attributes`
+- `runtime_wired_event_props`
+- `unsupported_event_bindings`
 - `generated_file_references` 목록
 
 ### 4.2 실샘플 E2E 회귀 실행 (R08)
@@ -218,6 +223,13 @@ PYTHONPATH=src python3 -m migrator fidelity-audit data/input/xml/<파일명>.xml
 - `summary.missing_node_count`
 - `summary.position_attribute_coverage_ratio`, `summary.style_attribute_coverage_ratio`
 - `missing_node_paths`, `position_style_coverage_risks`
+
+확인 포인트(이벤트 wiring 리스크):
+
+- `summary.total_event_attributes`: XML에서 감지된 `on*` 속성 수
+- `summary.runtime_wired_event_props`: 실제 React 이벤트 prop으로 매핑된 수
+- `summary.unsupported_event_bindings`: 미지원/미결선 이벤트 수
+- `unsupported_event_inventory[]`: 구조화된 미지원 이벤트 목록 (`reason`, `event_name`, `action_name`, `warning` 포함)
 
 ### 4.6.2 Behavior 스캐폴드만 재생성 (선택)
 

@@ -9,7 +9,12 @@ from .preview_manifest import (
     load_screens_manifest,
     load_screens_manifest_file,
 )
-from .ui_codegen import UiCodegenReport, UiCodegenSummary, generate_ui_codegen_artifacts
+from .ui_codegen import (
+    UnsupportedUiEventBinding,
+    UiCodegenReport,
+    UiCodegenSummary,
+    generate_ui_codegen_artifacts,
+)
 from .behavior_store_codegen import (
     BehaviorEventActionBinding,
     BehaviorStorePlan,
@@ -61,6 +66,7 @@ __all__ = [
     "FidelityPositionStyleCoverageRisk",
     "FidelitySourceNodeInventory",
     "RuntimeWiringContract",
+    "UnsupportedUiEventBinding",
     "UiCodegenReport",
     "UiCodegenSummary",
     "build_runtime_wiring_contract",

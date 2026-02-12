@@ -707,6 +707,9 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     "total_nodes": ui_report.summary.total_nodes,
                     "rendered_nodes": ui_report.summary.rendered_nodes,
                     "wired_event_bindings": ui_report.summary.wired_event_bindings,
+                    "total_event_attributes": ui_report.summary.total_event_attributes,
+                    "runtime_wired_event_props": ui_report.summary.runtime_wired_event_props,
+                    "unsupported_event_bindings": ui_report.summary.unsupported_event_bindings,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
 
