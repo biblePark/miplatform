@@ -1,0 +1,56 @@
+{
+  "round_id": "R10",
+  "base_branch": "main",
+  "default_checks": [
+    "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+    "cd preview-host && npm run build"
+  ],
+  "lanes": [
+    {
+      "name": "prototype-acceptance-gates",
+      "branch_name": "codex/r10-prototype-acceptance-gates",
+      "worktree_path": "/tmp/miflatform-r10-prototype-acceptance-gates",
+      "objective": "Define and implement a prototype acceptance command that evaluates migration outputs against explicit KPI thresholds.",
+      "deliverables": [
+        "Add deterministic acceptance evaluation module and report schema driven by configurable KPI thresholds",
+        "Add CLI command (or migrate-e2e follow-up command) that reads migration summary artifacts and emits pass/fail verdict",
+        "Include checks for fidelity risks, unsupported event coverage risk, and unresolved transaction adapter readiness signals",
+        "Add unit tests for acceptance pass/fail scenarios and deterministic report output"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "real-sample-baseline-diff",
+      "branch_name": "codex/r10-real-sample-baseline-diff",
+      "worktree_path": "/tmp/miflatform-r10-real-sample-baseline-diff",
+      "objective": "Enable baseline snapshot and delta comparison for real-sample regression outputs so KPI movement is measurable between rounds.",
+      "deliverables": [
+        "Add script/workflow to persist round baseline summary snapshots from real-sample regression outputs",
+        "Add deterministic baseline diff report with regressions/improvements by stage and risk trend dimensions",
+        "Support strict failure when key KPIs regress beyond configured tolerances",
+        "Document baseline lifecycle and artifact paths in README/USER_MANUAL"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v"
+      ]
+    },
+    {
+      "name": "preview-host-prototype-smoke",
+      "branch_name": "codex/r10-preview-host-prototype-smoke",
+      "worktree_path": "/tmp/miflatform-r10-preview-host-prototype-smoke",
+      "objective": "Improve generated-screen inspectability with repeatable preview-host smoke evidence for prototype review.",
+      "deliverables": [
+        "Add preview-host smoke command/report that validates all generated screen modules are present and route-resolvable",
+        "Emit a deterministic preview evidence artifact (screen list, route paths, unresolved module count)",
+        "Integrate smoke evidence into user-visible verification flow without breaking existing commands",
+        "Add tests and update user docs for how to run and interpret preview smoke evidence"
+      ],
+      "checks": [
+        "python3 -m unittest discover -s tests -p 'test_*.py' -v",
+        "cd preview-host && npm run build"
+      ]
+    }
+  ]
+}
