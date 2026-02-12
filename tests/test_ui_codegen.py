@@ -48,6 +48,10 @@ class TestUiCodegen(unittest.TestCase):
             self.assertGreater(report.summary.total_nodes, 0)
             self.assertEqual(report.summary.total_nodes, report.summary.rendered_nodes)
             self.assertEqual(report.summary.wired_event_bindings, 1)
+            self.assertEqual(report.summary.total_event_attributes, 1)
+            self.assertEqual(report.summary.runtime_wired_event_props, 1)
+            self.assertEqual(report.summary.unsupported_event_bindings, 0)
+            self.assertEqual(report.unsupported_event_inventory, [])
 
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("export default function SimpleScreenFixtureScreen", tsx_text)
@@ -295,6 +299,224 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('data-mi-action-onclick={"onFnSave"}', tsx_text)
             self.assertIn('data-mi-action-onclick={"onFnSave2"}', tsx_text)
             self.assertEqual(report.summary.wired_event_bindings, 2)
+            self.assertEqual(report.summary.total_event_attributes, 2)
+            self.assertEqual(report.summary.runtime_wired_event_props, 2)
+            self.assertEqual(report.summary.unsupported_event_bindings, 0)
+
+    def test_generate_ui_codegen_artifacts_wires_extended_react_event_props(self) -> None:
+        screen = ScreenIR(
+            screen_id="Extended Events",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "ExtendedEvents"},
+                text=None,
+                source=SourceRef(file_path="extended.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="extended.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Button",
+                                attributes={
+                                    "id": "btnExtended",
+                                    "text": "Extended",
+                                    "oncontextmenu": "fnOpenContext",
+                                    "ondragstart": "fnDragStart",
+                                    "onwheel": "fnWheel",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="extended.xml",
+                                    node_path="/Screen[1]/Contents[1]/Button[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnExtended",
+                    event_name="oncontextmenu",
+                    handler="fnOpenContext",
+                    source=SourceRef(
+                        file_path="extended.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnExtended",
+                    event_name="ondragstart",
+                    handler="fnDragStart",
+                    source=SourceRef(
+                        file_path="extended.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnExtended",
+                    event_name="onwheel",
+                    handler="fnWheel",
+                    source=SourceRef(
+                        file_path="extended.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="extended.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('onContextMenu={behaviorStore.onFnOpenContext}', tsx_text)
+            self.assertIn('onDragStart={behaviorStore.onFnDragStart}', tsx_text)
+            self.assertIn('onWheel={behaviorStore.onFnWheel}', tsx_text)
+            self.assertIn('data-mi-action-oncontextmenu={"onFnOpenContext"}', tsx_text)
+            self.assertIn('data-mi-action-ondragstart={"onFnDragStart"}', tsx_text)
+            self.assertIn('data-mi-action-onwheel={"onFnWheel"}', tsx_text)
+            self.assertEqual(report.summary.wired_event_bindings, 3)
+            self.assertEqual(report.summary.total_event_attributes, 3)
+            self.assertEqual(report.summary.runtime_wired_event_props, 3)
+            self.assertEqual(report.summary.unsupported_event_bindings, 0)
+            self.assertEqual(report.unsupported_event_inventory, [])
+
+    def test_generate_ui_codegen_artifacts_reports_structured_unsupported_event_inventory(self) -> None:
+        screen = ScreenIR(
+            screen_id="Unsupported Events",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "UnsupportedEvents"},
+                text=None,
+                source=SourceRef(file_path="unsupported.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="unsupported.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Button",
+                                attributes={
+                                    "id": "btnUnsupported",
+                                    "text": "Unsupported",
+                                    "onclick": "fnClick",
+                                    "onhotkey": "fnHotkey",
+                                    "onitemchanged": "fnItemChanged",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="unsupported.xml",
+                                    node_path="/Screen[1]/Contents[1]/Button[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    ),
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnUnsupported",
+                    event_name="onclick",
+                    handler="fnClick",
+                    source=SourceRef(
+                        file_path="unsupported.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnUnsupported",
+                    event_name="onitemchanged",
+                    handler="fnItemChanged",
+                    source=SourceRef(
+                        file_path="unsupported.xml",
+                        node_path="/Screen[1]/Contents[1]/Button[1]",
+                        line=3,
+                    ),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="unsupported.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('onClick={behaviorStore.onFnClick}', tsx_text)
+            self.assertIn('data-mi-action-onitemchanged={"onFnItemChanged"}', tsx_text)
+            self.assertNotIn("onItemChanged={", tsx_text)
+
+            self.assertEqual(report.summary.wired_event_bindings, 2)
+            self.assertEqual(report.summary.total_event_attributes, 3)
+            self.assertEqual(report.summary.runtime_wired_event_props, 1)
+            self.assertEqual(report.summary.unsupported_event_bindings, 2)
+            self.assertEqual(len(report.unsupported_event_inventory), 2)
+
+            self.assertEqual(report.unsupported_event_inventory[0].event_name, "onhotkey")
+            self.assertEqual(
+                report.unsupported_event_inventory[0].reason,
+                "missing_behavior_action_binding",
+            )
+            self.assertIsNone(report.unsupported_event_inventory[0].action_name)
+
+            self.assertEqual(report.unsupported_event_inventory[1].event_name, "onitemchanged")
+            self.assertEqual(
+                report.unsupported_event_inventory[1].reason,
+                "missing_react_event_mapping",
+            )
+            self.assertEqual(
+                report.unsupported_event_inventory[1].action_name,
+                "onFnItemChanged",
+            )
+
+            self.assertIn(
+                (
+                    "No behavior action binding resolved for event 'onhotkey' at "
+                    "/Screen[1]/Contents[1]/Button[1]; runtime handler not wired."
+                ),
+                report.warnings,
+            )
+            self.assertIn(
+                (
+                    "No React event mapping for 'onitemchanged' at "
+                    "/Screen[1]/Contents[1]/Button[1]; action 'onFnItemChanged' trace emitted only."
+                ),
+                report.warnings,
+            )
 
 
 if __name__ == "__main__":

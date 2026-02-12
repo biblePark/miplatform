@@ -18,19 +18,91 @@ _NUMERIC_VALUE_RE = re.compile(r"^-?\d+(\.\d+)?$")
 _NON_ALNUM = re.compile(r"[^0-9A-Za-z]+")
 _CONTAINER_TAGS = frozenset({"screen", "contents", "container"})
 _EVENT_ATTR_TO_REACT_PROP: dict[str, str] = {
-    "onclick": "onClick",
-    "ondblclick": "onDoubleClick",
-    "onchange": "onChange",
-    "oninput": "onInput",
-    "onfocus": "onFocus",
+    "onabort": "onAbort",
+    "onanimationend": "onAnimationEnd",
+    "onanimationiteration": "onAnimationIteration",
+    "onanimationstart": "onAnimationStart",
+    "onbeforeinput": "onBeforeInput",
     "onblur": "onBlur",
+    "oncanplay": "onCanPlay",
+    "oncanplaythrough": "onCanPlayThrough",
+    "onchange": "onChange",
+    "onclick": "onClick",
+    "oncompositionend": "onCompositionEnd",
+    "oncompositionstart": "onCompositionStart",
+    "oncompositionupdate": "onCompositionUpdate",
+    "oncontextmenu": "onContextMenu",
+    "oncopy": "onCopy",
+    "oncut": "onCut",
+    "ondblclick": "onDoubleClick",
+    "ondrag": "onDrag",
+    "ondragend": "onDragEnd",
+    "ondragenter": "onDragEnter",
+    "ondragexit": "onDragExit",
+    "ondragleave": "onDragLeave",
+    "ondragover": "onDragOver",
+    "ondragstart": "onDragStart",
+    "ondrop": "onDrop",
+    "ondurationchange": "onDurationChange",
+    "onemptied": "onEmptied",
+    "onencrypted": "onEncrypted",
+    "onended": "onEnded",
+    "onerror": "onError",
+    "onfocus": "onFocus",
+    "ongotpointercapture": "onGotPointerCapture",
+    "oninput": "onInput",
+    "oninvalid": "onInvalid",
     "onkeydown": "onKeyDown",
+    "onkeypress": "onKeyPress",
     "onkeyup": "onKeyUp",
+    "onload": "onLoad",
+    "onloadeddata": "onLoadedData",
+    "onloadedmetadata": "onLoadedMetadata",
+    "onloadstart": "onLoadStart",
+    "onlostpointercapture": "onLostPointerCapture",
     "onmousedown": "onMouseDown",
-    "onmouseup": "onMouseUp",
     "onmouseenter": "onMouseEnter",
     "onmouseleave": "onMouseLeave",
+    "onmousemove": "onMouseMove",
+    "onmouseout": "onMouseOut",
+    "onmouseover": "onMouseOver",
+    "onmouseup": "onMouseUp",
+    "onpaste": "onPaste",
+    "onpause": "onPause",
+    "onplay": "onPlay",
+    "onplaying": "onPlaying",
+    "onpointercancel": "onPointerCancel",
+    "onpointerdown": "onPointerDown",
+    "onpointerenter": "onPointerEnter",
+    "onpointerleave": "onPointerLeave",
+    "onpointermove": "onPointerMove",
+    "onpointerout": "onPointerOut",
+    "onpointerover": "onPointerOver",
+    "onpointerup": "onPointerUp",
+    "onprogress": "onProgress",
+    "onratechange": "onRateChange",
+    "onreset": "onReset",
+    "onresize": "onResize",
+    "onscroll": "onScroll",
+    "onseeked": "onSeeked",
+    "onseeking": "onSeeking",
+    "onselect": "onSelect",
+    "onstalled": "onStalled",
+    "onsubmit": "onSubmit",
+    "onsuspend": "onSuspend",
+    "ontimeupdate": "onTimeUpdate",
+    "ontoggle": "onToggle",
+    "ontouchcancel": "onTouchCancel",
+    "ontouchend": "onTouchEnd",
+    "ontouchmove": "onTouchMove",
+    "ontouchstart": "onTouchStart",
+    "ontransitionend": "onTransitionEnd",
+    "onvolumechange": "onVolumeChange",
+    "onwaiting": "onWaiting",
+    "onwheel": "onWheel",
 }
+UNSUPPORTED_EVENT_REASON_MISSING_BINDING = "missing_behavior_action_binding"
+UNSUPPORTED_EVENT_REASON_MISSING_REACT_MAPPING = "missing_react_event_mapping"
 _STYLE_DIMENSION_KEYS = frozenset(
     {
         "left",
@@ -69,6 +141,22 @@ class UiCodegenSummary:
     total_nodes: int
     rendered_nodes: int
     wired_event_bindings: int
+    total_event_attributes: int = 0
+    runtime_wired_event_props: int = 0
+    unsupported_event_bindings: int = 0
+
+
+@dataclass(slots=True)
+class UnsupportedUiEventBinding:
+    node_path: str
+    node_tag: str
+    event_name: str
+    source_attr_name: str
+    handler: str
+    action_name: str | None
+    reason: str
+    warning: str
+    source: SourceRef | None = None
 
 
 @dataclass(slots=True)
@@ -81,11 +169,18 @@ class UiCodegenReport:
     behavior_actions_file: str
     wiring_contract: RuntimeWiringContract
     summary: UiCodegenSummary
+    unsupported_event_inventory: list[UnsupportedUiEventBinding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+
+@dataclass(slots=True)
+class _EventWiringStats:
+    total_event_attributes: int = 0
+    runtime_wired_event_props: int = 0
 
 
 def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
@@ -424,6 +519,34 @@ def _build_event_action_lookup(
     return lookup
 
 
+def _record_unsupported_event_warning(
+    *,
+    warnings: list[str],
+    unsupported_event_inventory: list[UnsupportedUiEventBinding],
+    node: AstNode,
+    attr_name: str,
+    attr_lower: str,
+    handler: str,
+    action_name: str | None,
+    reason: str,
+    warning_message: str,
+) -> None:
+    warnings.append(warning_message)
+    unsupported_event_inventory.append(
+        UnsupportedUiEventBinding(
+            node_path=node.source.node_path,
+            node_tag=node.tag,
+            event_name=attr_lower,
+            source_attr_name=attr_name,
+            handler=handler,
+            action_name=action_name,
+            reason=reason,
+            warning=warning_message,
+            source=node.source,
+        )
+    )
+
+
 def _render_widget_body(node: AstNode, *, widget_kind: str, depth: int) -> list[str]:
     indent = "  " * depth
     content_style = _style_attribute(_widget_content_style(widget_kind))
@@ -517,6 +640,8 @@ def _render_node(
     *,
     depth: int,
     warnings: list[str],
+    unsupported_event_inventory: list[UnsupportedUiEventBinding],
+    event_wiring_stats: _EventWiringStats,
     event_action_lookup: dict[tuple[str, str, str], str],
     behavior_store_var: str,
     is_root: bool = False,
@@ -539,6 +664,7 @@ def _render_node(
         attr_lower = attr_name.lower()
         if not attr_lower.startswith("on") or len(attr_lower) <= 2:
             continue
+        event_wiring_stats.total_event_attributes += 1
 
         action_name = event_action_lookup.get(
             _event_lookup_key(
@@ -548,11 +674,20 @@ def _render_node(
             )
         )
         if action_name is None:
-            warnings.append(
-                (
-                    f"No behavior action binding resolved for event '{attr_name}' "
-                    f"at {node.source.node_path}; runtime handler not wired."
-                )
+            warning_message = (
+                f"No behavior action binding resolved for event '{attr_name}' "
+                f"at {node.source.node_path}; runtime handler not wired."
+            )
+            _record_unsupported_event_warning(
+                warnings=warnings,
+                unsupported_event_inventory=unsupported_event_inventory,
+                node=node,
+                attr_name=attr_name,
+                attr_lower=attr_lower,
+                handler=attr_value,
+                action_name=None,
+                reason=UNSUPPORTED_EVENT_REASON_MISSING_BINDING,
+                warning_message=warning_message,
             )
             continue
 
@@ -561,15 +696,25 @@ def _render_node(
         )
         react_event_prop = _EVENT_ATTR_TO_REACT_PROP.get(attr_lower)
         if react_event_prop is None:
-            warnings.append(
-                (
-                    f"No React event mapping for '{attr_name}' at {node.source.node_path}; "
-                    f"action '{action_name}' trace emitted only."
-                )
+            warning_message = (
+                f"No React event mapping for '{attr_name}' at {node.source.node_path}; "
+                f"action '{action_name}' trace emitted only."
+            )
+            _record_unsupported_event_warning(
+                warnings=warnings,
+                unsupported_event_inventory=unsupported_event_inventory,
+                node=node,
+                attr_name=attr_name,
+                attr_lower=attr_lower,
+                handler=attr_value,
+                action_name=action_name,
+                reason=UNSUPPORTED_EVENT_REASON_MISSING_REACT_MAPPING,
+                warning_message=warning_message,
             )
             continue
 
         event_props.append(f"{react_event_prop}={{{behavior_store_var}.{action_name}}}")
+        event_wiring_stats.runtime_wired_event_props += 1
 
     style_attr = _style_attribute(_build_node_style(node, is_root=is_root, widget_kind=widget_kind))
     trace_payload = " ".join(trace_attrs)
@@ -592,6 +737,8 @@ def _render_node(
                 child,
                 depth=depth + 1,
                 warnings=warnings,
+                unsupported_event_inventory=unsupported_event_inventory,
+                event_wiring_stats=event_wiring_stats,
                 event_action_lookup=event_action_lookup,
                 behavior_store_var=behavior_store_var,
             )
@@ -612,6 +759,8 @@ def _render_screen_component(
     *,
     wiring_contract: RuntimeWiringContract,
     warnings: list[str],
+    unsupported_event_inventory: list[UnsupportedUiEventBinding],
+    event_wiring_stats: _EventWiringStats,
     event_action_lookup: dict[tuple[str, str, str], str],
 ) -> str:
     root = screen.root
@@ -652,6 +801,8 @@ def _render_screen_component(
             root,
             depth=3,
             warnings=warnings,
+            unsupported_event_inventory=unsupported_event_inventory,
+            event_wiring_stats=event_wiring_stats,
             event_action_lookup=event_action_lookup,
             behavior_store_var=behavior_store_var,
             is_root=True,
@@ -686,11 +837,15 @@ def generate_ui_codegen_artifacts(
     )
 
     warnings: list[str] = []
+    unsupported_event_inventory: list[UnsupportedUiEventBinding] = []
+    event_wiring_stats = _EventWiringStats()
     tsx_path.write_text(
         _render_screen_component(
             screen,
             wiring_contract=wiring_contract,
             warnings=warnings,
+            unsupported_event_inventory=unsupported_event_inventory,
+            event_wiring_stats=event_wiring_stats,
             event_action_lookup=_build_event_action_lookup(
                 behavior_report.event_action_bindings
             ),
@@ -714,12 +869,17 @@ def generate_ui_codegen_artifacts(
             total_nodes=total_nodes,
             rendered_nodes=total_nodes,
             wired_event_bindings=len(behavior_report.event_action_bindings),
+            total_event_attributes=event_wiring_stats.total_event_attributes,
+            runtime_wired_event_props=event_wiring_stats.runtime_wired_event_props,
+            unsupported_event_bindings=len(unsupported_event_inventory),
         ),
+        unsupported_event_inventory=unsupported_event_inventory,
         warnings=warnings,
     )
 
 
 __all__ = [
+    "UnsupportedUiEventBinding",
     "UiCodegenReport",
     "UiCodegenSummary",
     "generate_ui_codegen_artifacts",

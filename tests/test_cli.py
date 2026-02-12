@@ -287,6 +287,9 @@ class TestCli(unittest.TestCase):
                 "useSimpleScreenFixtureBehaviorStore",
             )
             self.assertEqual(payload["stages"]["gen_ui"]["wired_event_bindings"], 1)
+            self.assertEqual(payload["stages"]["gen_ui"]["total_event_attributes"], 1)
+            self.assertEqual(payload["stages"]["gen_ui"]["runtime_wired_event_props"], 1)
+            self.assertEqual(payload["stages"]["gen_ui"]["unsupported_event_bindings"], 0)
 
             generated_files = set(payload["generated_file_references"])
             self.assertIn(str((api_out_dir / "src" / "routes" / "simple-screen-fixture.routes.js").resolve()), generated_files)
@@ -386,6 +389,10 @@ class TestCli(unittest.TestCase):
             )
 
             self.assertEqual(payload["summary"]["wired_event_bindings"], 1)
+            self.assertEqual(payload["summary"]["total_event_attributes"], 1)
+            self.assertEqual(payload["summary"]["runtime_wired_event_props"], 1)
+            self.assertEqual(payload["summary"]["unsupported_event_bindings"], 0)
+            self.assertEqual(payload["unsupported_event_inventory"], [])
 
             tsx_path = Path(payload["tsx_file"])
             store_path = Path(payload["behavior_store_file"])
@@ -409,6 +416,58 @@ class TestCli(unittest.TestCase):
                 tsx_text,
             )
             self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
+
+    def test_gen_ui_report_includes_structured_unsupported_event_inventory(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_path = Path(tmp_dir) / "unsupported-events.xml"
+            xml_path.write_text(
+                (
+                    "<Screen id='UnsupportedEvents'>"
+                    "<Contents>"
+                    "<Button id='btnUnsupported' text='Unsupported' onclick='fnClick' onitemchanged='fnItemChanged' />"
+                    "</Contents>"
+                    "</Screen>"
+                ),
+                encoding="utf-8",
+            )
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report_out = Path(tmp_dir) / "ui-report.json"
+            rc = main(
+                [
+                    "gen-ui",
+                    str(xml_path),
+                    "--out-dir",
+                    str(out_dir),
+                    "--report-out",
+                    str(report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+
+            self.assertEqual(payload["summary"]["wired_event_bindings"], 2)
+            self.assertEqual(payload["summary"]["total_event_attributes"], 2)
+            self.assertEqual(payload["summary"]["runtime_wired_event_props"], 1)
+            self.assertEqual(payload["summary"]["unsupported_event_bindings"], 1)
+            self.assertEqual(len(payload["unsupported_event_inventory"]), 1)
+            self.assertEqual(payload["unsupported_event_inventory"][0]["event_name"], "onitemchanged")
+            self.assertEqual(
+                payload["unsupported_event_inventory"][0]["reason"],
+                "missing_react_event_mapping",
+            )
+            self.assertEqual(
+                payload["unsupported_event_inventory"][0]["action_name"],
+                "onFnItemChanged",
+            )
+            self.assertIn(
+                (
+                    "No React event mapping for 'onitemchanged' at "
+                    "/Screen[1]/Contents[1]/Button[1]; action 'onFnItemChanged' trace emitted only."
+                ),
+                payload["warnings"],
+            )
 
     def test_gen_behavior_store_generates_store_actions_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

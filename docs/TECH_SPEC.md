@@ -258,7 +258,7 @@ Aggregation behavior:
 - Summary remains backward-compatible for existing base fields:
 - `generated_at_utc`, `input_dir`, `out_dir`, `total_xml_files`, `reports_written`, `failures`.
 
-## 12) Runtime Behavior Wiring Contract (R08)
+## 12) Runtime Behavior Wiring Contract (R08-R09)
 
 Scope:
 
@@ -284,8 +284,18 @@ Event/action runtime contract:
 - `screenBehaviorEventActionBindings[]` in actions module
 - `event_action_bindings[]` in behavior report JSON
 - `gen-ui` uses the same planned bindings and wires supported XML `on*` events to React handler props on generated widget shells.
+- Supported event mapping policy is expanded beyond minimal click/input events to broader React DOM events (mouse, keyboard, focus, form, drag/drop, pointer, touch, media, animation, transition, wheel).
+- Unsupported event risks are preserved in structured report fields:
+- `summary.total_event_attributes`
+- `summary.runtime_wired_event_props`
+- `summary.unsupported_event_bindings`
+- `unsupported_event_inventory[]` entries with deterministic order and fields:
+- `node_path`, `node_tag`, `event_name`, `source_attr_name`, `handler`, `action_name`, `reason`, `warning`, `source`
+- `reason` values:
+- `missing_behavior_action_binding`
+- `missing_react_event_mapping`
 
 Generation behavior update:
 
 - `gen-ui` now also emits deterministic behavior scaffolds under `src/behavior/` so generated screen imports are immediately resolvable.
-- `migrate-e2e` `gen_ui` stage metadata includes behavior file references and wired event binding counts.
+- `migrate-e2e` `gen_ui` stage metadata includes behavior file references and event wiring counters (`wired_event_bindings`, `total_event_attributes`, `runtime_wired_event_props`, `unsupported_event_bindings`).
