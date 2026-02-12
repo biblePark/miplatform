@@ -39,6 +39,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 6: UI TSX scaffold generation + preview manifest/registry sync.
 - Round 7: One-command end-to-end migration orchestration with consolidated summary report.
 - Round 8: Runtime wiring contract + real-sample migrate-e2e regression automation with extraction/mapping/fidelity risk trend reporting.
+- Round 9: Deterministic XML-to-generated-UI fidelity audit module/report with strict audit gates and migrate-e2e integration.
 
 ## Quick Start
 
@@ -72,15 +73,21 @@ Run behavior store/action scaffold generation:
 PYTHONPATH=src python3 -m migrator gen-behavior-store tests/fixtures/simple_screen_fixture.txt --out-dir out/generated-frontend --report-out out/gen-behavior-store-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
+Run fidelity audit against generated UI TSX:
+
+```bash
+PYTHONPATH=src python3 -m migrator fidelity-audit tests/fixtures/simple_screen_fixture.txt --generated-ui-file generated/frontend/src/screens/simple-screen-fixture.tsx --report-out out/fidelity-audit-report.json --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
+```
+
 Run one-command end-to-end migration orchestration:
 
 ```bash
 PYTHONPATH=src python3 -m migrator migrate-e2e tests/fixtures/simple_screen_fixture.txt --out-dir out/e2e --api-out-dir generated/api --ui-out-dir generated/frontend --preview-host-dir preview-host --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-This command executes parse/map-api/gen-ui/sync-preview in sequence and writes:
+This command executes parse/map-api/gen-ui/fidelity-audit/sync-preview in sequence and writes:
 
-- Stage reports under `out/e2e` (default): parse/map-api/gen-ui/sync-preview JSON
+- Stage reports under `out/e2e` (default): parse/map-api/gen-ui/fidelity-audit/sync-preview JSON
 - Generated UI stage outputs: `src/screens/*.tsx` plus deterministic runtime-wired `src/behavior/*.store.ts` and `src/behavior/*.actions.ts`
 - Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
 - Summary includes stage statuses, report file references, and generated file references for verification

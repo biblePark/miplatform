@@ -9,6 +9,11 @@ import sys
 
 from .api_mapping import generate_api_mapping_artifacts
 from .behavior_store_codegen import generate_behavior_store_artifacts
+from .fidelity_audit import (
+    FidelityAuditStrictError,
+    enforce_fidelity_audit_strict,
+    generate_fidelity_audit_report,
+)
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
 from .ui_codegen import generate_ui_codegen_artifacts
@@ -240,6 +245,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(gen_ui_cmd)
     gen_ui_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    fidelity_audit_cmd = subparsers.add_parser(
+        "fidelity-audit",
+        help="Compare XML node/style inventory against generated UI TSX trace inventory",
+    )
+    fidelity_audit_cmd.add_argument("xml_path", help="Path to source XML file")
+    fidelity_audit_cmd.add_argument(
+        "--generated-ui-file",
+        required=True,
+        help="Generated UI TSX screen file path to audit",
+    )
+    fidelity_audit_cmd.add_argument(
+        "--report-out",
+        required=True,
+        help="Output path for fidelity audit report JSON",
+    )
+    _add_common_parse_options(fidelity_audit_cmd)
+    fidelity_audit_cmd.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON outputs",
+    )
+
     gen_behavior_store_cmd = subparsers.add_parser(
         "gen-behavior-store",
         help="Generate Zustand behavior store/action scaffolds from ScreenIR events/bindings/transactions",
@@ -292,7 +319,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     migrate_e2e_cmd = subparsers.add_parser(
         MIGRATE_E2E_COMMAND_NAME,
-        help="Run parse/map-api/gen-ui/sync-preview for one XML and emit consolidated summary JSON",
+        help="Run parse/map-api/gen-ui/fidelity-audit/sync-preview for one XML and emit consolidated summary JSON",
     )
     migrate_e2e_cmd.add_argument("xml_path", help="Path to source XML file")
     migrate_e2e_cmd.add_argument(
@@ -315,6 +342,10 @@ def build_parser() -> argparse.ArgumentParser:
     migrate_e2e_cmd.add_argument(
         "--ui-report-out",
         help="Optional explicit output path for gen-ui stage report JSON",
+    )
+    migrate_e2e_cmd.add_argument(
+        "--fidelity-report-out",
+        help="Optional explicit output path for fidelity-audit stage report JSON",
     )
     migrate_e2e_cmd.add_argument(
         "--preview-report-out",
@@ -477,6 +508,21 @@ def run_gen_ui(args: argparse.Namespace) -> int:
     return 0
 
 
+def run_fidelity_audit(args: argparse.Namespace) -> int:
+    config = _build_parse_config(args)
+    parse_report = parse_xml_file(args.xml_path, config=config)
+    fidelity_report = generate_fidelity_audit_report(
+        screen=parse_report.screen,
+        input_xml_path=args.xml_path,
+        generated_ui_file=args.generated_ui_file,
+    )
+    report_out = Path(args.report_out).resolve()
+    _write_json_file(report_out, fidelity_report.to_dict(), pretty=args.pretty)
+    if args.strict:
+        enforce_fidelity_audit_strict(fidelity_report)
+    return 0
+
+
 def run_gen_behavior_store(args: argparse.Namespace) -> int:
     config = _build_parse_config(args)
     report = parse_xml_file(args.xml_path, config=config)
@@ -525,6 +571,11 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         if args.ui_report_out
         else out_dir / f"{stem}.gen-ui-report.json"
     )
+    fidelity_report_out = (
+        Path(args.fidelity_report_out).resolve()
+        if args.fidelity_report_out
+        else out_dir / f"{stem}.fidelity-audit-report.json"
+    )
     preview_report_out = (
         Path(args.preview_report_out).resolve()
         if args.preview_report_out
@@ -540,6 +591,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         "parse": {"status": "pending"},
         "map_api": {"status": "pending"},
         "gen_ui": {"status": "pending"},
+        "fidelity_audit": {"status": "pending"},
         "sync_preview": {"status": "pending"},
     }
     generated_files: list[str] = []
@@ -552,6 +604,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         "parse_report": str(parse_report_out),
         "map_api_report": str(map_report_out),
         "gen_ui_report": str(ui_report_out),
+        "fidelity_audit_report": str(fidelity_report_out),
         "preview_sync_report": str(preview_report_out),
         "consolidated_summary": str(summary_out),
     }
@@ -566,6 +619,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         stage_status["parse"] = {"status": "failure", "error": error_message}
         stage_status["map_api"] = {"status": "skipped", "reason": "parse_failed"}
         stage_status["gen_ui"] = {"status": "skipped", "reason": "parse_failed"}
+        stage_status["fidelity_audit"] = {"status": "skipped", "reason": "parse_failed"}
         stage_status["sync_preview"] = {"status": "skipped", "reason": "parse_failed"}
         errors.append(f"parse: {error_message}")
         exit_code = 2
@@ -595,6 +649,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
             print(error_message, file=sys.stderr)
             stage_status["map_api"] = {"status": "failure", "error": error_message}
             stage_status["gen_ui"] = {"status": "skipped", "reason": "map_api_exception"}
+            stage_status["fidelity_audit"] = {"status": "skipped", "reason": "map_api_exception"}
             stage_status["sync_preview"] = {"status": "skipped", "reason": "map_api_exception"}
             errors.append(f"map_api: {error_message}")
             exit_code = 2
@@ -629,6 +684,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                 error_message = f"{type(exc).__name__}: {exc}"
                 print(error_message, file=sys.stderr)
                 stage_status["gen_ui"] = {"status": "failure", "error": error_message}
+                stage_status["fidelity_audit"] = {"status": "skipped", "reason": "gen_ui_failed"}
                 stage_status["sync_preview"] = {"status": "skipped", "reason": "gen_ui_failed"}
                 errors.append(f"gen_ui: {error_message}")
                 exit_code = 2
@@ -653,6 +709,63 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     "wired_event_bindings": ui_report.summary.wired_event_bindings,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
+
+                try:
+                    fidelity_report = generate_fidelity_audit_report(
+                        screen=parse_report.screen,
+                        input_xml_path=str(xml_path),
+                        generated_ui_file=ui_report.tsx_file,
+                    )
+                except Exception as exc:  # pragma: no cover - defensive path
+                    error_message = f"{type(exc).__name__}: {exc}"
+                    print(error_message, file=sys.stderr)
+                    stage_status["fidelity_audit"] = {
+                        "status": "failure",
+                        "error": error_message,
+                    }
+                    errors.append(f"fidelity_audit: {error_message}")
+                    exit_code = 2
+                else:
+                    _write_json_file(
+                        fidelity_report_out,
+                        fidelity_report.to_dict(),
+                        pretty=args.pretty,
+                    )
+                    warnings.extend(
+                        f"fidelity_audit: {message}"
+                        for message in fidelity_report.warnings
+                    )
+                    summary = fidelity_report.summary
+                    strict_fidelity_failed = (
+                        args.strict and fidelity_report.has_blocking_risks()
+                    )
+                    stage_status["fidelity_audit"] = {
+                        "status": "failure" if strict_fidelity_failed else "success",
+                        "risk_detected": fidelity_report.has_blocking_risks(),
+                        "report_file": str(fidelity_report_out),
+                        "missing_node_count": summary.missing_node_count,
+                        "extra_generated_node_count": summary.extra_generated_node_count,
+                        "position_attribute_total": summary.position_attribute_total,
+                        "position_attribute_covered": summary.position_attribute_covered,
+                        "style_attribute_total": summary.style_attribute_total,
+                        "style_attribute_covered": summary.style_attribute_covered,
+                        "position_style_nodes_with_risk": (
+                            summary.position_style_nodes_with_risk
+                        ),
+                    }
+                    if fidelity_report.has_blocking_risks():
+                        warnings.append(
+                            "fidelity_audit: coverage risks detected "
+                            f"(missing_nodes={summary.missing_node_count}, "
+                            "position_style_nodes_with_risk="
+                            f"{summary.position_style_nodes_with_risk})"
+                        )
+                        if args.strict:
+                            try:
+                                enforce_fidelity_audit_strict(fidelity_report)
+                            except FidelityAuditStrictError as exc:
+                                errors.append(f"fidelity_audit: {exc}")
+                            exit_code = 2
 
                 generated_screens_dir = Path(args.ui_out_dir).resolve() / "src" / "screens"
                 try:
@@ -724,6 +837,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_map_api(args)
         if args.command == "gen-ui":
             return run_gen_ui(args)
+        if args.command == "fidelity-audit":
+            return run_fidelity_audit(args)
         if args.command == "gen-behavior-store":
             return run_gen_behavior_store(args)
         if args.command == "sync-preview":
@@ -731,6 +846,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == MIGRATE_E2E_COMMAND_NAME:
             return run_migrate_e2e(args)
     except ParseStrictError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
+    except FidelityAuditStrictError as exc:
         print(str(exc), file=sys.stderr)
         return 2
     except FileNotFoundError as exc:

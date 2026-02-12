@@ -273,12 +273,14 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["stages"]["parse"]["status"], "success")
             self.assertEqual(payload["stages"]["map_api"]["status"], "success")
             self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
+            self.assertEqual(payload["stages"]["fidelity_audit"]["status"], "success")
             self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
 
             reports = payload["reports"]
             self.assertTrue(Path(reports["parse_report"]).exists())
             self.assertTrue(Path(reports["map_api_report"]).exists())
             self.assertTrue(Path(reports["gen_ui_report"]).exists())
+            self.assertTrue(Path(reports["fidelity_audit_report"]).exists())
             self.assertTrue(Path(reports["preview_sync_report"]).exists())
             self.assertEqual(Path(reports["consolidated_summary"]), summary_out.resolve())
 
@@ -345,8 +347,63 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["stages"]["map_api"]["status"], "failure")
             self.assertEqual(payload["stages"]["map_api"]["mapped_failure"], 1)
             self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
+            self.assertEqual(payload["stages"]["fidelity_audit"]["status"], "success")
             self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
             self.assertIn("map_api: mapping failures detected (1)", payload["errors"])
+
+    def test_fidelity_audit_command_fails_in_strict_mode_for_missing_nodes(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            ui_out_dir = workspace / "generated-ui"
+            ui_report_out = workspace / "ui-report.json"
+            fidelity_out = workspace / "fidelity-report.json"
+
+            gen_ui_rc = main(
+                [
+                    "gen-ui",
+                    str(FIXTURE_XML),
+                    "--out-dir",
+                    str(ui_out_dir),
+                    "--report-out",
+                    str(ui_report_out),
+                    "--capture-text",
+                    "--pretty",
+                ]
+            )
+            self.assertEqual(gen_ui_rc, 0)
+            ui_payload = json.loads(ui_report_out.read_text(encoding="utf-8"))
+            tsx_path = Path(ui_payload["tsx_file"])
+            original = tsx_path.read_text(encoding="utf-8")
+            tampered = original.replace(
+                'data-mi-source-node={"/Screen[1]/Contents[1]/Grid[1]"}',
+                'data-mi-source-node={"__tampered__/Grid[1]"}',
+                1,
+            )
+            self.assertNotEqual(original, tampered)
+            tsx_path.write_text(tampered, encoding="utf-8")
+
+            rc = main(
+                [
+                    "fidelity-audit",
+                    str(FIXTURE_XML),
+                    "--generated-ui-file",
+                    str(tsx_path),
+                    "--report-out",
+                    str(fidelity_out),
+                    "--strict",
+                    "--capture-text",
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 2)
+            self.assertTrue(fidelity_out.exists())
+            payload = json.loads(fidelity_out.read_text(encoding="utf-8"))
+            self.assertGreater(payload["summary"]["missing_node_count"], 0)
+            self.assertIn(
+                "/Screen[1]/Contents[1]/Grid[1]",
+                payload["missing_node_paths"],
+            )
 
     def test_gen_ui_generates_tsx_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
