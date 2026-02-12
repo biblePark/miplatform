@@ -17,7 +17,7 @@ if str(SRC_DIR) not in sys.path:
 
 from migrator.cli import main as migrator_main
 
-STAGES = ("parse", "map_api", "gen_ui", "sync_preview")
+STAGES = ("parse", "map_api", "gen_ui", "fidelity_audit", "sync_preview")
 EXTRACTION_RISK_GATES = {
     "dataset_extraction_coverage",
     "binding_extraction_coverage",
@@ -232,7 +232,10 @@ def _render_markdown_summary(summary: dict[str, Any]) -> str:
     lines.append(
         f"- Fidelity risk files: `{fidelity['files_with_risk']}` "
         f"(gate failures: `{sum(fidelity['gate_failure_counts'].values())}`, "
-        f"UI fallback warnings: `{fidelity['ui_fallback_warning_total']}`)"
+        f"UI fallback warnings: `{fidelity['ui_fallback_warning_total']}`, "
+        f"missing nodes: `{fidelity['missing_node_total']}`, "
+        "position/style risk nodes: "
+        f"`{fidelity['position_style_nodes_with_risk_total']}`)"
     )
 
     lines.extend(["", "## Unresolved Malformed/XML Blockers", ""])
@@ -248,8 +251,8 @@ def _render_markdown_summary(summary: dict[str, Any]) -> str:
             "",
             "## Sample Outcomes",
             "",
-            "| XML | Overall | Exit | Parse | Map API | Gen UI | Sync Preview |",
-            "|---|---|---:|---|---|---|---|",
+            "| XML | Overall | Exit | Parse | Map API | Gen UI | Fidelity Audit | Sync Preview |",
+            "|---|---|---:|---|---|---|---|---|",
         ]
     )
     for item in summary.get("samples", []):
@@ -257,7 +260,9 @@ def _render_markdown_summary(summary: dict[str, Any]) -> str:
         lines.append(
             f"| `{item['xml_path']}` | `{item['overall_status']}` | `{item['exit_code']}` | "
             f"`{statuses.get('parse', 'missing')}` | `{statuses.get('map_api', 'missing')}` | "
-            f"`{statuses.get('gen_ui', 'missing')}` | `{statuses.get('sync_preview', 'missing')}` |"
+            f"`{statuses.get('gen_ui', 'missing')}` | "
+            f"`{statuses.get('fidelity_audit', 'missing')}` | "
+            f"`{statuses.get('sync_preview', 'missing')}` |"
         )
     return "\n".join(lines) + "\n"
 
@@ -339,7 +344,13 @@ def main(argv: list[str] | None = None) -> int:
     mapping_unsupported_total = 0
     fidelity_gate_failures: Counter[str] = Counter()
     fidelity_issues_by_file: dict[str, dict[str, Any]] = defaultdict(
-        lambda: {"failed_gates": set(), "ui_fallback_warning_count": 0}
+        lambda: {
+            "failed_gates": set(),
+            "ui_fallback_warning_count": 0,
+            "missing_node_count": 0,
+            "position_style_nodes_with_risk": 0,
+            "report_file": None,
+        }
     )
     malformed_xml_blockers: list[dict[str, str]] = []
 
@@ -433,6 +444,11 @@ def main(argv: list[str] | None = None) -> int:
             if isinstance(reports, dict) and isinstance(reports.get("gen_ui_report"), str)
             else None
         )
+        fidelity_report_path = (
+            Path(reports["fidelity_audit_report"]).resolve()
+            if isinstance(reports, dict) and isinstance(reports.get("fidelity_audit_report"), str)
+            else None
+        )
 
         if parse_report_path and parse_report_path.exists():
             parse_report = _load_json_file(parse_report_path)
@@ -491,6 +507,35 @@ def main(argv: list[str] | None = None) -> int:
                         fallback_count
                     )
 
+        if fidelity_report_path and fidelity_report_path.exists():
+            fidelity_report = _load_json_file(fidelity_report_path)
+            summary = fidelity_report.get("summary", {})
+            missing_node_count = (
+                int(summary.get("missing_node_count", 0))
+                if isinstance(summary, dict)
+                else 0
+            )
+            position_style_nodes_with_risk = (
+                int(summary.get("position_style_nodes_with_risk", 0))
+                if isinstance(summary, dict)
+                else 0
+            )
+            if missing_node_count > 0:
+                fidelity_gate_failures["fidelity_missing_node_count"] += missing_node_count
+            if position_style_nodes_with_risk > 0:
+                fidelity_gate_failures[
+                    "fidelity_position_style_nodes_with_risk"
+                ] += position_style_nodes_with_risk
+
+            if missing_node_count > 0 or position_style_nodes_with_risk > 0:
+                fidelity_issues_by_file[str(xml_path)]["missing_node_count"] += missing_node_count
+                fidelity_issues_by_file[str(xml_path)][
+                    "position_style_nodes_with_risk"
+                ] += position_style_nodes_with_risk
+                fidelity_issues_by_file[str(xml_path)]["report_file"] = str(
+                    fidelity_report_path
+                )
+
         sample_results.append(
             {
                 "xml_path": str(xml_path),
@@ -538,15 +583,30 @@ def main(argv: list[str] | None = None) -> int:
             "xml_path": file_path,
             "failed_gates": sorted(issue["failed_gates"]),
             "ui_fallback_warning_count": int(issue["ui_fallback_warning_count"]),
+            "missing_node_count": int(issue["missing_node_count"]),
+            "position_style_nodes_with_risk": int(
+                issue["position_style_nodes_with_risk"]
+            ),
+            "report_file": issue["report_file"],
         }
         for file_path, issue in sorted(
             fidelity_issues_by_file.items(),
             key=lambda item: (
-                -(len(item[1]["failed_gates"]) + int(item[1]["ui_fallback_warning_count"])),
+                -(
+                    len(item[1]["failed_gates"])
+                    + int(item[1]["ui_fallback_warning_count"])
+                    + int(item[1]["missing_node_count"])
+                    + int(item[1]["position_style_nodes_with_risk"])
+                ),
                 item[0],
             ),
         )
-        if issue["failed_gates"] or int(issue["ui_fallback_warning_count"]) > 0
+        if (
+            issue["failed_gates"]
+            or int(issue["ui_fallback_warning_count"]) > 0
+            or int(issue["missing_node_count"]) > 0
+            or int(issue["position_style_nodes_with_risk"]) > 0
+        )
     ]
 
     summary_payload = {
@@ -603,6 +663,13 @@ def main(argv: list[str] | None = None) -> int:
                 "gate_failure_counts": _sorted_counter(fidelity_gate_failures),
                 "ui_fallback_warning_total": sum(
                     int(item["ui_fallback_warning_count"]) for item in fidelity_top_files
+                ),
+                "missing_node_total": sum(
+                    int(item["missing_node_count"]) for item in fidelity_top_files
+                ),
+                "position_style_nodes_with_risk_total": sum(
+                    int(item["position_style_nodes_with_risk"])
+                    for item in fidelity_top_files
                 ),
                 "top_files": fidelity_top_files,
             },

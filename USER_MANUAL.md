@@ -50,7 +50,7 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
-하나의 XML 기준으로 `parse -> map-api -> gen-ui -> sync-preview`를 한 번에 실행합니다. (`gen-ui` 단계에서 behavior store/actions wiring 산출물도 함께 생성)
+하나의 XML 기준으로 `parse -> map-api -> gen-ui -> fidelity-audit -> sync-preview`를 한 번에 실행합니다. (`gen-ui` 단계에서 behavior store/actions wiring 산출물도 함께 생성)
 
 ```bash
 PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
@@ -68,7 +68,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 주요 산출물:
 
 - 통합 요약 리포트: `out/e2e/<파일명>.migration-summary.json`
-- 단계별 리포트: `out/e2e/<파일명>.parse-report.json`, `out/e2e/<파일명>.map-api-report.json`, `out/e2e/<파일명>.gen-ui-report.json`, `out/e2e/<파일명>.preview-sync-report.json`
+- 단계별 리포트: `out/e2e/<파일명>.parse-report.json`, `out/e2e/<파일명>.map-api-report.json`, `out/e2e/<파일명>.gen-ui-report.json`, `out/e2e/<파일명>.fidelity-audit-report.json`, `out/e2e/<파일명>.preview-sync-report.json`
 - 생성 코드:
 - API 스텁: `generated/api/src/routes`, `generated/api/src/services`
 - UI 화면: `generated/frontend/src/screens`
@@ -78,7 +78,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 확인 포인트:
 
 - 통합 리포트 `overall_status`, `overall_exit_code`
-- `stages`별 상태(`parse`, `map_api`, `gen_ui`, `sync_preview`)
+- `stages`별 상태(`parse`, `map_api`, `gen_ui`, `fidelity_audit`, `sync_preview`)
 - `generated_file_references` 목록
 
 ### 4.2 실샘플 E2E 회귀 실행 (R08)
@@ -198,7 +198,28 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 - behavior wiring 스캐폴드: `generated/frontend/src/behavior/*.store.ts`, `generated/frontend/src/behavior/*.actions.ts`
 - 코드젠 보고서: `out/gen-ui-<파일명>.json`
 
-### 4.6.1 Behavior 스캐폴드만 재생성 (선택)
+### 4.6.1 UI Fidelity 감사 리포트 생성 (R09)
+
+생성된 UI TSX가 XML 노드/스타일 속성을 얼마나 커버하는지 deterministic 리포트를 생성합니다.
+
+```bash
+PYTHONPATH=src python3 -m migrator fidelity-audit data/input/xml/<파일명>.xml \
+  --generated-ui-file generated/frontend/src/screens/<screen-file>.tsx \
+  --report-out out/fidelity-audit-<파일명>.json \
+  --strict \
+  --capture-text \
+  --known-tags-file data/input/profiles/known_tags.txt \
+  --known-attrs-file data/input/profiles/known_attrs.json \
+  --pretty
+```
+
+확인 포인트:
+
+- `summary.missing_node_count`
+- `summary.position_attribute_coverage_ratio`, `summary.style_attribute_coverage_ratio`
+- `missing_node_paths`, `position_style_coverage_risks`
+
+### 4.6.2 Behavior 스캐폴드만 재생성 (선택)
 
 behavior 파일만 별도로 다시 만들고 싶다면 아래 명령을 사용합니다.
 
