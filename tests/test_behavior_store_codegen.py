@@ -46,6 +46,17 @@ def _make_screen(events: list[EventIR], transactions: list[TransactionIR]) -> Sc
     )
 
 
+def _generate_actions_text(screen: ScreenIR) -> str:
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        out_dir = Path(tmp_dir) / "generated-behavior"
+        report = generate_behavior_store_artifacts(
+            screen=screen,
+            input_xml_path="behavior.xml",
+            out_dir=out_dir,
+        )
+        return Path(report.actions_file).read_text(encoding="utf-8")
+
+
 class TestBehaviorStoreCodegen(unittest.TestCase):
     def test_plan_behavior_store_scaffold_names_event_and_transaction_actions(self) -> None:
         screen = _make_screen(
@@ -203,6 +214,86 @@ class TestBehaviorStoreCodegen(unittest.TestCase):
             self.assertIn("requestSvcOrderSearch", actions_text)
             self.assertIn("screenBehaviorEventActionBindings", actions_text)
             self.assertIn("duplicateActionPolicy", actions_text)
+
+    def test_generate_behavior_store_artifacts_generates_transaction_adapter_action_calls(self) -> None:
+        screen = _make_screen(
+            events=[],
+            transactions=[
+                TransactionIR(
+                    node_tag="Transaction",
+                    node_id="txSearch",
+                    transaction_id="SVC_ORDER_SEARCH",
+                    endpoint="/api/orders/search",
+                    method="POST",
+                    source=_src("behavior.xml", "/Screen[1]/Transaction[1]"),
+                ),
+            ],
+        )
+
+        actions_text = _generate_actions_text(screen)
+        self.assertIn(
+            'export type ScreenBehaviorTransactionActionName =\n  "requestSvcOrderSearch";',
+            actions_text,
+        )
+        self.assertIn(
+            'actionName: "requestSvcOrderSearch"',
+            actions_text,
+        )
+        self.assertIn(
+            "requestSvcOrderSearch: async () => {",
+            actions_text,
+        )
+        self.assertIn(
+            'await runScreenBehaviorTransactionAction("requestSvcOrderSearch", options);',
+            actions_text,
+        )
+
+    def test_generate_behavior_store_artifacts_emits_adapter_hook_contracts(self) -> None:
+        screen = _make_screen(
+            events=[],
+            transactions=[
+                TransactionIR(
+                    node_tag="Transaction",
+                    node_id="txSearch",
+                    transaction_id="SVC_ORDER_SEARCH",
+                    endpoint="/api/orders/search",
+                    method="POST",
+                    source=_src("behavior.xml", "/Screen[1]/Transaction[1]"),
+                ),
+            ],
+        )
+
+        actions_text = _generate_actions_text(screen)
+        self.assertIn("export interface ScreenBehaviorTransactionRequestEnvelope {", actions_text)
+        self.assertIn("export interface ScreenBehaviorTransactionResponseEnvelope {", actions_text)
+        self.assertIn("export interface ScreenBehaviorTransactionErrorEnvelope {", actions_text)
+        self.assertIn("export interface ScreenBehaviorTransactionAdapterHooks {", actions_text)
+        self.assertIn("onRequest?: (", actions_text)
+        self.assertIn("onResponse?: (", actions_text)
+        self.assertIn("onError?: (error: ScreenBehaviorTransactionErrorEnvelope)", actions_text)
+        self.assertIn("export interface CreateScreenBehaviorActionsOptions {", actions_text)
+
+    def test_generate_behavior_store_artifacts_scaffolds_transaction_failure_path(self) -> None:
+        screen = _make_screen(
+            events=[],
+            transactions=[
+                TransactionIR(
+                    node_tag="Transaction",
+                    node_id="txSearch",
+                    transaction_id="SVC_ORDER_SEARCH",
+                    endpoint="/api/orders/search",
+                    method="POST",
+                    source=_src("behavior.xml", "/Screen[1]/Transaction[1]"),
+                ),
+            ],
+        )
+
+        actions_text = _generate_actions_text(screen)
+        self.assertIn('code: "UNIMPLEMENTED_TRANSACTION_ADAPTER"', actions_text)
+        self.assertIn('phase: "request"', actions_text)
+        self.assertIn('phase: "response"', actions_text)
+        self.assertIn("throw requestErrorEnvelope;", actions_text)
+        self.assertIn("throw responseErrorEnvelope;", actions_text)
 
 
 if __name__ == "__main__":

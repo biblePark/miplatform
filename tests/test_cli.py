@@ -573,6 +573,9 @@ class TestCli(unittest.TestCase):
             self.assertIn("onFnSearch", actions_text)
             self.assertIn("requestSvcOrderSearch", actions_text)
             self.assertIn("screenBehaviorEventActionBindings", actions_text)
+            self.assertIn("screenBehaviorTransactionContracts", actions_text)
+            self.assertIn("ScreenBehaviorTransactionAdapterHooks", actions_text)
+            self.assertIn("UNIMPLEMENTED_TRANSACTION_ADAPTER", actions_text)
 
     def test_sync_preview_generates_manifest_registry_and_report(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
