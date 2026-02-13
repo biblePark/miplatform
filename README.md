@@ -85,9 +85,9 @@ Run one-command end-to-end migration orchestration:
 PYTHONPATH=src python3 -m migrator migrate-e2e tests/fixtures/simple_screen_fixture.txt --out-dir out/e2e --api-out-dir generated/api --ui-out-dir generated/frontend --preview-host-dir preview-host --strict --capture-text --known-tags-file tests/fixtures/known_tags_all.txt --known-attrs-file tests/fixtures/known_attrs_all.json --pretty
 ```
 
-This command executes parse/map-api/gen-ui/fidelity-audit/sync-preview in sequence and writes:
+This command executes parse/map-api/gen-ui/fidelity-audit/sync-preview/preview-smoke in sequence and writes:
 
-- Stage reports under `out/e2e` (default): parse/map-api/gen-ui/fidelity-audit/sync-preview JSON
+- Stage reports under `out/e2e` (default): parse/map-api/gen-ui/fidelity-audit/sync-preview/preview-smoke JSON
 - Generated UI stage outputs: `src/screens/*.tsx` plus deterministic runtime-wired `src/behavior/*.store.ts` and `src/behavior/*.actions.ts`
 - Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
 - Summary includes stage statuses, report file references, and generated file references for verification
@@ -110,6 +110,14 @@ Sync generated UI screens into preview-host manifest + registry:
 ```bash
 PYTHONPATH=src python3 -m migrator sync-preview --generated-screens-dir generated/frontend/src/screens --preview-host-dir preview-host --report-out out/preview-sync-report.json --pretty
 ```
+
+Run preview-host smoke evidence for generated screen route/module readiness:
+
+```bash
+PYTHONPATH=src python3 -m migrator preview-smoke --generated-screens-dir generated/frontend/src/screens --preview-host-dir preview-host --report-out out/preview-smoke-report.json --pretty
+```
+
+Smoke report evidence includes deterministic generated screen list, `/preview/<screenId>` route paths, and `unresolved_module_count`.
 
 Example `out/batch-summary.json` (trimmed):
 

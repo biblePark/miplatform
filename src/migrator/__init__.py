@@ -39,6 +39,11 @@ from .preview_sync import (
     PreviewSyncReport,
     sync_preview_host,
 )
+from .preview_smoke import (
+    PreviewSmokeReport,
+    PreviewSmokeScreenEvidence,
+    smoke_preview_host,
+)
 from .runtime_wiring import RuntimeWiringContract, build_runtime_wiring_contract
 from .validator import (
     compute_canonical_hash_pair,
@@ -53,6 +58,8 @@ __all__ = [
     "ManifestContractError",
     "GeneratedScreenEntry",
     "PreviewSyncReport",
+    "PreviewSmokeReport",
+    "PreviewSmokeScreenEvidence",
     "ScreenManifestEntry",
     "ScreensManifest",
     "BehaviorEventActionBinding",
@@ -83,4 +90,5 @@ __all__ = [
     "plan_behavior_store_scaffold",
     "plan_event_action_bindings",
     "sync_preview_host",
+    "smoke_preview_host",
 ]

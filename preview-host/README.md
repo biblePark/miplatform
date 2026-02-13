@@ -31,11 +31,26 @@ Optional per-screen metadata sidecar:
 - `<ScreenModule>.preview.json`
 - Supported fields: `screenId`, `title`, `sourceXmlPath`, `sourceNodePath`
 
+## Smoke Evidence (R10)
+
+Validate generated screen modules are present and route-resolvable, then emit deterministic smoke evidence:
+
+```bash
+PYTHONPATH=src python3 -m migrator preview-smoke --generated-screens-dir generated/frontend/src/screens --preview-host-dir preview-host --report-out out/preview-smoke-report.json --pretty
+```
+
+Smoke evidence fields:
+
+- `screens[]`: generated screen-level readiness (`module_present`, `loader_registered`, `route_resolvable`)
+- `route_paths[]`: deterministic `/preview/<screenId>` list for generated screens
+- `unresolved_module_count`: unresolved generated module total (command exits non-zero when this is greater than 0)
+
 ## Local Verification Flow
 
 1. Generate or update UI screen modules under `generated/frontend/src/screens`.
 2. Run `mifl-migrator sync-preview` (command above).
-3. Build host:
+3. Run `mifl-migrator preview-smoke` (command above) and confirm `unresolved_module_count == 0`.
+4. Build host:
 
 ```bash
 cd preview-host
@@ -43,7 +58,7 @@ npm install
 npm run build
 ```
 
-4. Run dev host and open a generated route:
+5. Run dev host and open a generated route:
 
 ```bash
 npm run dev
