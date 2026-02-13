@@ -196,21 +196,681 @@ class TestUiCodegen(unittest.TestCase):
             )
             self.assertIn(
                 (
-                    '<TextField className="mi-widget mi-widget-edit" fullWidth size="small" '
-                    'label={"Keyword"} style={{"height": "100%", "width": "100%"}} '
+                    '<Box className="mi-widget mi-widget-edit" component="input" type="text" '
+                    'aria-label={"Keyword"} style={{"height": "100%", "width": "100%"}} '
+                    'sx={{ boxSizing: "border-box", font: "inherit", m: 0, minWidth: 0, p: 0 }} '
                     'defaultValue={"A-100"} />'
                 ),
                 tsx_text,
             )
             self.assertIn(
                 (
-                    '<FormControl className="mi-widget mi-widget-combo" fullWidth '
-                    'size="small" style={{"height": "100%", "width": "100%"}}>'
+                    '<Box className="mi-widget mi-widget-combo" component="select" '
+                    'aria-label={"Status"} style={{"height": "100%", "width": "100%"}} '
+                    'sx={{ boxSizing: "border-box", font: "inherit", m: 0, minWidth: 0, p: 0 }} '
+                    'defaultValue={""}>'
                 ),
                 tsx_text,
             )
             self.assertIn(
                 'className="mi-widget mi-widget-grid" style={{"height": "100%", "width": "100%"}}',
+                tsx_text,
+            )
+
+    def test_generate_ui_codegen_artifacts_normalizes_legacy_right_bottom_coordinates(self) -> None:
+        screen = ScreenIR(
+            screen_id="Legacy Coordinate Normalization",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "LegacyCoordinateNormalization"},
+                text=None,
+                source=SourceRef(file_path="coords.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="coords.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Grid",
+                                attributes={
+                                    "id": "grdPrimary",
+                                    "left": "20",
+                                    "right": "220",
+                                    "width": "200",
+                                    "top": "10",
+                                    "bottom": "110",
+                                    "height": "100",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="coords.xml",
+                                    node_path="/Screen[1]/Contents[1]/Grid[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Edit",
+                                attributes={
+                                    "id": "edtInferredLeft",
+                                    "right": "180",
+                                    "width": "80",
+                                    "top": "124",
+                                    "height": "20",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="coords.xml",
+                                    node_path="/Screen[1]/Contents[1]/Edit[1]",
+                                    line=4,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Static",
+                                attributes={
+                                    "id": "staAnchor",
+                                    "left": "24",
+                                    "right": "24",
+                                    "top": "160",
+                                    "text": "Anchor",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="coords.xml",
+                                    node_path="/Screen[1]/Contents[1]/Static[1]",
+                                    line=5,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="coords.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn(
+                (
+                    'style={{"height": "100px", "left": "20px", "position": "absolute", '
+                    '"top": "10px", "width": "200px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    'style={{"height": "20px", "left": "100px", "position": "absolute", '
+                    '"top": "124px", "width": "80px"}}'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    'style={{"left": "24px", "position": "absolute", '
+                    '"right": "24px", "top": "160px"}}'
+                ),
+                tsx_text,
+            )
+
+    def test_generate_ui_codegen_artifacts_normalizes_text_align_values(self) -> None:
+        screen = ScreenIR(
+            screen_id="Text Align Normalization",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "TextAlignNormalization"},
+                text=None,
+                source=SourceRef(file_path="align.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="align.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Static",
+                                attributes={
+                                    "id": "staRight",
+                                    "text": "Right",
+                                    "left": "8",
+                                    "top": "8",
+                                    "width": "120",
+                                    "height": "24",
+                                    "align": "RIGHT",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="align.xml",
+                                    node_path="/Screen[1]/Contents[1]/Static[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Static",
+                                attributes={
+                                    "id": "staCenter",
+                                    "text": "Center",
+                                    "left": "8",
+                                    "top": "40",
+                                    "width": "120",
+                                    "height": "24",
+                                    "textalign": "centre",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="align.xml",
+                                    node_path="/Screen[1]/Contents[1]/Static[2]",
+                                    line=4,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Static",
+                                attributes={
+                                    "id": "staUnknown",
+                                    "text": "Unknown",
+                                    "left": "8",
+                                    "top": "72",
+                                    "width": "120",
+                                    "height": "24",
+                                    "textalign": "MiddleCenter",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="align.xml",
+                                    node_path="/Screen[1]/Contents[1]/Static[3]",
+                                    line=5,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="align.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('"textAlign": "right"', tsx_text)
+            self.assertIn('"textAlign": "center"', tsx_text)
+            self.assertNotIn('"textAlign": "middlecenter"', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_maps_legacy_widget_aliases_and_ignores_meta_tags(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Legacy Widget Aliases",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "LegacyWidgetAliases"},
+                text=None,
+                source=SourceRef(file_path="legacy.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Window",
+                        attributes={"id": "winMain"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="legacy.xml",
+                            node_path="/Screen[1]/Window[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Form",
+                                attributes={"id": "frmMain"},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="legacy.xml",
+                                    node_path="/Screen[1]/Window[1]/Form[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="Div",
+                                        attributes={"id": "divMain"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="legacy.xml",
+                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]",
+                                            line=4,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="TextArea",
+                                                attributes={
+                                                    "id": "txtMemo",
+                                                    "text": "Memo",
+                                                    "rows": "4",
+                                                    "value": "sample",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/TextArea[1]",
+                                                    line=5,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="MaskEdit",
+                                                attributes={
+                                                    "id": "mskDate",
+                                                    "text": "Date",
+                                                    "mask": "9999-99-99",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/MaskEdit[1]",
+                                                    line=6,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Image",
+                                                attributes={
+                                                    "id": "imgLogo",
+                                                    "text": "Logo",
+                                                    "src": "/assets/logo.png",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Image[1]",
+                                                    line=7,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Radio",
+                                                attributes={"id": "rdoType", "text": "Type"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Radio[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Checkbox",
+                                                attributes={
+                                                    "id": "chkAgree",
+                                                    "text": "Agree",
+                                                    "value": "true",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Checkbox[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Calendar",
+                                                attributes={
+                                                    "id": "calStart",
+                                                    "text": "Start",
+                                                    "value": "2026-02-13",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Calendar[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Spin",
+                                                attributes={"id": "spnQty", "text": "Qty", "value": "1"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Spin[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="WebBrowser",
+                                                attributes={
+                                                    "id": "wbHelp",
+                                                    "text": "Help",
+                                                    "url": "https://example.com",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/WebBrowser[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="TreeView",
+                                                attributes={"id": "trvMenu", "text": "Menu"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/TreeView[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Grid",
+                                                attributes={
+                                                    "id": "grdOrders",
+                                                    "text": "Orders",
+                                                    "binddataset": "dsOrder",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]",
+                                                    line=9,
+                                                ),
+                                                children=[
+                                                    AstNode(
+                                                        tag="colinfo",
+                                                        attributes={},
+                                                        text=None,
+                                                        source=SourceRef(
+                                                            file_path="legacy.xml",
+                                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/colinfo[1]",
+                                                            line=10,
+                                                        ),
+                                                        children=[
+                                                            AstNode(
+                                                                tag="col",
+                                                                attributes={"id": "orderNo"},
+                                                                text=None,
+                                                                source=SourceRef(
+                                                                    file_path="legacy.xml",
+                                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/colinfo[1]/col[1]",
+                                                                    line=11,
+                                                                ),
+                                                                children=[],
+                                                            ),
+                                                            AstNode(
+                                                                tag="col",
+                                                                attributes={"id": "status"},
+                                                                text=None,
+                                                                source=SourceRef(
+                                                                    file_path="legacy.xml",
+                                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/colinfo[1]/col[2]",
+                                                                    line=12,
+                                                                ),
+                                                                children=[],
+                                                            ),
+                                                        ],
+                                                    ),
+                                                    AstNode(
+                                                        tag="format",
+                                                        attributes={},
+                                                        text=None,
+                                                        source=SourceRef(
+                                                            file_path="legacy.xml",
+                                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/format[1]",
+                                                            line=13,
+                                                        ),
+                                                        children=[
+                                                            AstNode(
+                                                                tag="head",
+                                                                attributes={},
+                                                                text=None,
+                                                                source=SourceRef(
+                                                                    file_path="legacy.xml",
+                                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/format[1]/head[1]",
+                                                                    line=14,
+                                                                ),
+                                                                children=[
+                                                                    AstNode(
+                                                                        tag="cell",
+                                                                        attributes={"text": "Order No"},
+                                                                        text=None,
+                                                                        source=SourceRef(
+                                                                            file_path="legacy.xml",
+                                                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                                            line=15,
+                                                                        ),
+                                                                        children=[],
+                                                                    ),
+                                                                    AstNode(
+                                                                        tag="cell",
+                                                                        attributes={"text": "Status"},
+                                                                        text=None,
+                                                                        source=SourceRef(
+                                                                            file_path="legacy.xml",
+                                                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                                            line=16,
+                                                                        ),
+                                                                        children=[],
+                                                                    ),
+                                                                ],
+                                                            ),
+                                                        ],
+                                                    ),
+                                                ],
+                                            ),
+                                        ],
+                                    )
+                                ],
+                            )
+                        ],
+                    ),
+                    AstNode(
+                        tag="Dataset",
+                        attributes={"id": "dsOrder"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="legacy.xml",
+                            node_path="/Screen[1]/Dataset[1]",
+                            line=17,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="record",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="legacy.xml",
+                                    node_path="/Screen[1]/Dataset[1]/record[1]",
+                                    line=18,
+                                ),
+                                children=[],
+                            )
+                        ],
+                    ),
+                    AstNode(
+                        tag="Script",
+                        attributes={},
+                        text="function noop() {}",
+                        source=SourceRef(
+                            file_path="legacy.xml",
+                            node_path="/Screen[1]/Script[1]",
+                            line=19,
+                        ),
+                        children=[],
+                    ),
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="legacy.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('className="mi-widget mi-widget-textarea"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-maskedit"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-image"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-radio"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-checkbox"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-calendar"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-spin"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-webbrowser"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-treeview"', tsx_text)
+            self.assertIn('component="img"', tsx_text)
+            self.assertIn('src={"/assets/logo.png"}', tsx_text)
+            self.assertIn('component="iframe"', tsx_text)
+            self.assertIn('src={"https://example.com"}', tsx_text)
+            self.assertIn(
+                '<TableCell sx={{ whiteSpace: "nowrap" }}>{"Order No"}</TableCell>',
+                tsx_text,
+            )
+            self.assertIn(
+                '<TableCell sx={{ whiteSpace: "nowrap" }}>{"Status"}</TableCell>',
+                tsx_text,
+            )
+            self.assertIn('data-mi-widget={"ignored"}', tsx_text)
+            self.assertIn('className="mi-widget-shell mi-widget-shell-dataset"', tsx_text)
+            self.assertIn('style={{"display": "none"}}', tsx_text)
+
+            self.assertNotIn('className="mi-widget mi-widget-fallback"', tsx_text)
+            self.assertNotIn("Unsupported tag: Window", tsx_text)
+            self.assertNotIn("Unsupported tag: Form", tsx_text)
+            self.assertNotIn("Unsupported tag: TextArea", tsx_text)
+            self.assertNotIn("Unsupported tag: Dataset", tsx_text)
+            self.assertNotIn("Unsupported tag: Script", tsx_text)
+            self.assertEqual(report.warnings, [])
+
+    def test_generate_ui_codegen_artifacts_wires_tab_page_switching_state(self) -> None:
+        screen = ScreenIR(
+            screen_id="Tab Page Visibility",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "TabPageVisibility"},
+                text=None,
+                source=SourceRef(file_path="tab.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Tab",
+                        attributes={"id": "tabMain"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="tab.xml",
+                            node_path="/Screen[1]/Tab[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Contents",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="tab.xml",
+                                    node_path="/Screen[1]/Tab[1]/Contents[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="TabPage",
+                                        attributes={"id": "page1", "text": "Page 1"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="tab.xml",
+                                            node_path="/Screen[1]/Tab[1]/Contents[1]/TabPage[1]",
+                                            line=4,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="TabPage",
+                                        attributes={"id": "page2", "text": "Page 2"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="tab.xml",
+                                            node_path="/Screen[1]/Tab[1]/Contents[1]/TabPage[2]",
+                                            line=5,
+                                        ),
+                                        children=[],
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="tab.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('import { useState, type JSX } from "react";', tsx_text)
+            self.assertIn("Tab as MuiTab, Tabs", tsx_text)
+            self.assertIn("const [tabIndex0, setTabIndex0] = useState<number>(0);", tsx_text)
+            self.assertIn(
+                '<Tabs value={tabIndex0} onChange={(_event, nextIndex) => setTabIndex0(nextIndex)}',
+                tsx_text,
+            )
+            self.assertIn('<MuiTab label={"Page 1"} />', tsx_text)
+            self.assertIn('<MuiTab label={"Page 2"} />', tsx_text)
+            page1_anchor = (
+                'data-mi-source-node={"/Screen[1]/Tab[1]/Contents[1]/TabPage[1]"} '
+                'data-mi-source-file={"tab.xml"}'
+            )
+            page2_anchor = (
+                'data-mi-source-node={"/Screen[1]/Tab[1]/Contents[1]/TabPage[2]"} '
+                'data-mi-source-file={"tab.xml"}'
+            )
+            self.assertIn(page1_anchor, tsx_text)
+            self.assertIn(page2_anchor, tsx_text)
+            self.assertIn(
+                'data-mi-attrs={"id=page1, text=Page 1"} style={{"position": "relative"}}',
+                tsx_text,
+            )
+            self.assertIn(
+                'data-mi-attrs={"id=page2, text=Page 2"} style={{"position": "relative"}}',
+                tsx_text,
+            )
+            self.assertIn("{tabIndex0 === 0 ? (", tsx_text)
+            self.assertIn(
+                '{/* source file=tab.xml node=/Screen[1]/Tab[1]/Contents[1]/TabPage[1] line=4 */}',
+                tsx_text,
+            )
+            self.assertIn("{tabIndex0 === 1 ? (", tsx_text)
+            self.assertIn(
+                '{/* source file=tab.xml node=/Screen[1]/Tab[1]/Contents[1]/TabPage[2] line=5 */}',
                 tsx_text,
             )
 

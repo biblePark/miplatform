@@ -69,6 +69,10 @@ class TestRealSampleE2eRegression(unittest.TestCase):
 
             top_warning_messages = {item["message"] for item in payload["top_warnings"]}
             self.assertIn("map_api: Mapping failures: 1", top_warning_messages)
+            artifacts = payload["artifacts"]
+            self.assertTrue(Path(artifacts["all_generated_screens_dir"]).exists())
+            self.assertTrue(Path(artifacts["all_generated_behavior_dir"]).exists())
+            self.assertGreaterEqual(payload["aggregated_generated"]["screen_file_count"], 1)
 
     def test_sample_list_file_mode_resolves_relative_paths(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -107,6 +111,8 @@ class TestRealSampleE2eRegression(unittest.TestCase):
             self.assertEqual(payload["stage_status_counts"]["parse"]["success"], 1)
             self.assertEqual(payload["malformed_xml_blockers"], [])
             self.assertEqual(payload["samples"][0]["xml_path"], str(sample_file.resolve()))
+            self.assertEqual(payload["aggregated_generated"]["screen_file_count"], 1)
+            self.assertEqual(payload["aggregated_generated"]["behavior_file_count"], 2)
 
 
 if __name__ == "__main__":

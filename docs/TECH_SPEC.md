@@ -299,3 +299,7 @@ Generation behavior update:
 
 - `gen-ui` now also emits deterministic behavior scaffolds under `src/behavior/` so generated screen imports are immediately resolvable.
 - `migrate-e2e` `gen_ui` stage metadata includes behavior file references and event wiring counters (`wired_event_bindings`, `total_event_attributes`, `runtime_wired_event_props`, `unsupported_event_bindings`).
+- Widget materialization baseline now includes legacy aliases:
+- container-like tags: `window`, `form`, `div`, `shape`, `tab`, `tabpage`
+- widget-like tags: `textarea`, `maskedit`, `image`, `radio`, `checkbox`, `calendar`, `spin`, `treeview`, `webbrowser`, `msie`, `rexpert`
+- non-visual meta tags (`dataset`, `colinfo`, `cell`, `script`, etc.) are emitted as traceable shell nodes without unsupported-widget warnings.

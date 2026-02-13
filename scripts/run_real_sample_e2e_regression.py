@@ -6,6 +6,7 @@ from collections import Counter, defaultdict
 from datetime import UTC, datetime
 import json
 from pathlib import Path
+import shutil
 import shlex
 import sys
 from typing import Any
@@ -142,6 +143,61 @@ def _format_status_counts(counter: Counter[str]) -> dict[str, int]:
             continue
         payload[key] = counter[key]
     return payload
+
+
+def _rebuild_all_generated_frontend(
+    *,
+    runs_dir: Path,
+    out_dir: Path,
+) -> dict[str, Any]:
+    screens_out_dir = out_dir / "src" / "screens"
+    behavior_out_dir = out_dir / "src" / "behavior"
+
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    screens_out_dir.mkdir(parents=True, exist_ok=True)
+    behavior_out_dir.mkdir(parents=True, exist_ok=True)
+
+    copied_screens: set[str] = set()
+    copied_behavior: set[str] = set()
+
+    for run_dir in sorted(path for path in runs_dir.iterdir() if path.is_dir()):
+        run_frontend_root = run_dir / "generated" / "frontend" / "src"
+        run_screens_dir = run_frontend_root / "screens"
+        if run_screens_dir.exists() and run_screens_dir.is_dir():
+            for source_file in sorted(
+                path for path in run_screens_dir.rglob("*") if path.is_file()
+            ):
+                if source_file.suffix not in {".tsx", ".jsx", ".ts", ".js"}:
+                    continue
+                if source_file.name.endswith(".d.ts"):
+                    continue
+                relative_path = source_file.relative_to(run_screens_dir)
+                destination = screens_out_dir / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_file, destination)
+                copied_screens.add(relative_path.as_posix())
+
+        run_behavior_dir = run_frontend_root / "behavior"
+        if run_behavior_dir.exists() and run_behavior_dir.is_dir():
+            for source_file in sorted(
+                path for path in run_behavior_dir.rglob("*") if path.is_file()
+            ):
+                if source_file.suffix != ".ts":
+                    continue
+                relative_path = source_file.relative_to(run_behavior_dir)
+                destination = behavior_out_dir / relative_path
+                destination.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(source_file, destination)
+                copied_behavior.add(relative_path.as_posix())
+
+    return {
+        "frontend_root_dir": str(out_dir),
+        "screens_dir": str(screens_out_dir),
+        "behavior_dir": str(behavior_out_dir),
+        "screen_file_count": len(copied_screens),
+        "behavior_file_count": len(copied_behavior),
+    }
 
 
 def _build_migrate_e2e_args(
@@ -563,6 +619,11 @@ def main(argv: list[str] | None = None) -> int:
         )[:top_warning_limit]
     ]
 
+    all_generated_frontend = _rebuild_all_generated_frontend(
+        runs_dir=runs_dir,
+        out_dir=out_dir / "all" / "generated" / "frontend",
+    )
+
     extraction_top_files = [
         {"xml_path": file_path, "failed_gates": sorted(gates)}
         for file_path, gates in sorted(
@@ -632,8 +693,15 @@ def main(argv: list[str] | None = None) -> int:
         "artifacts": {
             "out_dir": str(out_dir),
             "runs_dir": str(runs_dir),
+            "all_generated_frontend_dir": all_generated_frontend["frontend_root_dir"],
+            "all_generated_screens_dir": all_generated_frontend["screens_dir"],
+            "all_generated_behavior_dir": all_generated_frontend["behavior_dir"],
             "summary_json": str((out_dir / "regression-summary.json").resolve()),
             "summary_markdown": str((out_dir / "regression-summary.md").resolve()),
+        },
+        "aggregated_generated": {
+            "screen_file_count": int(all_generated_frontend["screen_file_count"]),
+            "behavior_file_count": int(all_generated_frontend["behavior_file_count"]),
         },
         "totals": {
             "total_samples": len(samples),

@@ -2,6 +2,10 @@
   font-family: "Segoe UI", "Noto Sans KR", sans-serif;
   color: #14233c;
   background-color: #f4f7fb;
+  --preview-shell-border: #d7e1f2;
+  --preview-shell-surface: #ffffff;
+  --preview-shell-header-bg: linear-gradient(135deg, #f0f6ff 0%, #f8fbff 100%);
+  --preview-shell-shadow: 0 8px 24px rgba(20, 35, 60, 0.08);
 }
 
 * {
@@ -15,4 +19,93 @@ body {
 
 a {
   color: #1b62d1;
+}
+
+.preview-host-main {
+  min-height: 100vh;
+  padding: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: flex-start;
+  overflow: auto;
+}
+
+.preview-host-shell {
+  flex: 0 0 auto;
+  display: inline-block;
+  width: fit-content;
+  max-width: none;
+  margin: 0 auto;
+  background: var(--preview-shell-surface);
+  border: 1px solid var(--preview-shell-border);
+  border-radius: 12px;
+  box-shadow: var(--preview-shell-shadow);
+}
+
+.preview-host-header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--preview-shell-border);
+  background: var(--preview-shell-header-bg);
+}
+
+.preview-host-title {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1.2;
+}
+
+.preview-host-subtitle {
+  margin: 8px 0 0;
+  color: #4f607f;
+}
+
+.preview-host-route-contract {
+  margin: 12px 0 0;
+}
+
+.preview-host-home-link {
+  display: inline-block;
+  margin-top: 4px;
+}
+
+.preview-host-content-scroll {
+  padding: 12px;
+  max-height: calc(100vh - 220px);
+  width: fit-content;
+  overflow: auto;
+}
+
+.preview-host-canvas {
+  width: fit-content;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+
+@media (max-width: 960px) {
+  .preview-host-main {
+    padding: 8px;
+    display: block;
+  }
+
+  .preview-host-title {
+    font-size: 26px;
+  }
+
+  .preview-host-shell {
+    display: block;
+    width: 100%;
+    max-width: 100%;
+  }
+
+  .preview-host-content-scroll {
+    width: 100%;
+    max-height: none;
+  }
+
+  .preview-host-canvas {
+    min-width: 0;
+    width: fit-content;
+    min-height: 0;
+  }
 }

@@ -275,6 +275,12 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 - behavior wiring 스캐폴드: `generated/frontend/src/behavior/*.store.ts`, `generated/frontend/src/behavior/*.actions.ts`
 - 코드젠 보고서: `out/gen-ui-<파일명>.json`
 
+기본 UI 태그 매핑(현재 기준):
+
+- 컨테이너 계열: `Screen`, `Contents`, `Container`, `Window`, `Form`, `Div`, `Shape`, `Tab`, `TabPage`
+- 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`
+- 비시각 메타 계열(`Dataset`, `colinfo`, `cell`, `Script` 등)은 fallback 경고를 남기지 않고 trace 목적의 shell로만 반영
+
 ### 4.6.1 UI Fidelity 감사 리포트 생성 (R09)
 
 생성된 UI TSX가 XML 노드/스타일 속성을 얼마나 커버하는지 deterministic 리포트를 생성합니다.
@@ -379,6 +385,11 @@ cd /Users/biblepark/Desktop/works/miflatform-migrator/preview-host
 npm install
 npm run dev
 ```
+
+참고:
+
+- Preview Host는 대형 ERP 화면 확인을 위해 데스크탑 캔버스 기준으로 표시됩니다.
+- 기본적으로 넓은 캔버스(`min-width` 기반) + 내부 스크롤 영역을 사용하므로, 화면 요소가 많은 경우 가로/세로 스크롤로 확인하세요.
 
 접속:
 
