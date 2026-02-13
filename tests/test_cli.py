@@ -275,6 +275,8 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
             self.assertEqual(payload["stages"]["fidelity_audit"]["status"], "success")
             self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
+            self.assertEqual(payload["stages"]["preview_smoke"]["status"], "success")
+            self.assertEqual(payload["stages"]["preview_smoke"]["unresolved_module_count"], 0)
 
             reports = payload["reports"]
             self.assertTrue(Path(reports["parse_report"]).exists())
@@ -282,6 +284,7 @@ class TestCli(unittest.TestCase):
             self.assertTrue(Path(reports["gen_ui_report"]).exists())
             self.assertTrue(Path(reports["fidelity_audit_report"]).exists())
             self.assertTrue(Path(reports["preview_sync_report"]).exists())
+            self.assertTrue(Path(reports["preview_smoke_report"]).exists())
             self.assertEqual(Path(reports["consolidated_summary"]), summary_out.resolve())
 
             self.assertEqual(
@@ -352,6 +355,7 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["stages"]["gen_ui"]["status"], "success")
             self.assertEqual(payload["stages"]["fidelity_audit"]["status"], "success")
             self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
+            self.assertEqual(payload["stages"]["preview_smoke"]["status"], "success")
             self.assertIn("map_api: mapping failures detected (1)", payload["errors"])
 
     def test_prototype_accept_command_returns_pass_for_clean_summary(self) -> None:
@@ -741,6 +745,133 @@ class TestCli(unittest.TestCase):
                 manifest_payload["screens"][0]["entryModule"],
                 "screens/generated/Orders",
             )
+
+    def test_preview_smoke_generates_evidence_report(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            generated_dir = workspace / "generated" / "frontend" / "src" / "screens"
+            preview_host_dir = workspace / "preview-host"
+            sync_report_out = workspace / "preview-sync-report.json"
+            smoke_report_out = workspace / "preview-smoke-report.json"
+
+            generated_dir.mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "manifest").mkdir(parents=True, exist_ok=True)
+            (generated_dir / "Orders.tsx").write_text(
+                "export default function Orders() { return null; }\n",
+                encoding="utf-8",
+            )
+
+            sync_rc = main(
+                [
+                    "sync-preview",
+                    "--generated-screens-dir",
+                    str(generated_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--report-out",
+                    str(sync_report_out),
+                    "--pretty",
+                ]
+            )
+            self.assertEqual(sync_rc, 0)
+
+            smoke_rc = main(
+                [
+                    "preview-smoke",
+                    "--generated-screens-dir",
+                    str(generated_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--report-out",
+                    str(smoke_report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(smoke_rc, 0)
+            payload = json.loads(smoke_report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["generated_screen_count"], 1)
+            self.assertEqual(payload["route_paths"], ["/preview/Orders"])
+            self.assertEqual(payload["unresolved_module_count"], 0)
+            self.assertEqual(payload["screens"][0]["entry_module"], "screens/generated/Orders")
+            self.assertTrue(payload["screens"][0]["route_resolvable"])
+
+    def test_preview_smoke_returns_failure_when_modules_are_unresolved(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            generated_dir = workspace / "generated" / "frontend" / "src" / "screens"
+            preview_host_dir = workspace / "preview-host"
+            manifest_path = preview_host_dir / "src" / "manifest" / "screens.manifest.json"
+            registry_generated_path = (
+                preview_host_dir / "src" / "screens" / "registry.generated.ts"
+            )
+            smoke_report_out = workspace / "preview-smoke-report.json"
+
+            generated_dir.mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "manifest").mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "screens").mkdir(parents=True, exist_ok=True)
+
+            (generated_dir / "Orders.tsx").write_text(
+                "export default function Orders() { return null; }\n",
+                encoding="utf-8",
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "$schema": "./screens.manifest.schema.json",
+                        "schemaVersion": "1.0",
+                        "generatedAtUtc": "2026-02-12T00:00:00Z",
+                        "screens": [
+                            {
+                                "screenId": "Orders",
+                                "entryModule": "screens/generated/Orders",
+                                "sourceXmlPath": "generated/frontend/src/screens/Orders.tsx",
+                                "sourceNodePath": "/generated/screens/Orders",
+                            },
+                            {
+                                "screenId": "Missing",
+                                "entryModule": "screens/generated/Missing",
+                                "sourceXmlPath": "generated/frontend/src/screens/Missing.tsx",
+                                "sourceNodePath": "/generated/screens/Missing",
+                            },
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+            registry_generated_path.write_text(
+                "\n".join(
+                    [
+                        "/* Auto-generated */",
+                        'import type { ScreenModuleLoader } from "../manifest/types";',
+                        "",
+                        "export const generatedScreenModuleLoaders: Record<string, ScreenModuleLoader> = {",
+                        '  "screens/generated/Orders": () => import("../../../generated/frontend/src/screens/Orders"),',
+                        "};",
+                        "",
+                    ]
+                ),
+                encoding="utf-8",
+            )
+
+            smoke_rc = main(
+                [
+                    "preview-smoke",
+                    "--generated-screens-dir",
+                    str(generated_dir),
+                    "--preview-host-dir",
+                    str(preview_host_dir),
+                    "--report-out",
+                    str(smoke_report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(smoke_rc, 2)
+            payload = json.loads(smoke_report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["unresolved_module_count"], 1)
+            unresolved = next(item for item in payload["screens"] if item["screen_id"] == "Missing")
+            self.assertFalse(unresolved["route_resolvable"])
 
 
 if __name__ == "__main__":

@@ -14,6 +14,7 @@ from .fidelity_audit import (
     enforce_fidelity_audit_strict,
     generate_fidelity_audit_report,
 )
+from .preview_smoke import smoke_preview_host
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
 from .preview_sync import sync_preview_host
@@ -322,9 +323,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync_preview_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    preview_smoke_cmd = subparsers.add_parser(
+        "preview-smoke",
+        help="Validate preview-host generated screen route/module readiness and emit evidence report",
+    )
+    preview_smoke_cmd.add_argument(
+        "--generated-screens-dir",
+        default="generated/frontend/src/screens",
+        help="Directory containing generated screen entry modules (default: generated/frontend/src/screens)",
+    )
+    preview_smoke_cmd.add_argument(
+        "--preview-host-dir",
+        default="preview-host",
+        help="Preview host root directory (default: preview-host)",
+    )
+    preview_smoke_cmd.add_argument(
+        "--manifest-file",
+        help="Optional explicit input path for screens manifest JSON",
+    )
+    preview_smoke_cmd.add_argument(
+        "--registry-generated-file",
+        help="Optional explicit input path for generated registry TypeScript module",
+    )
+    preview_smoke_cmd.add_argument(
+        "--report-out",
+        help="Optional output path for smoke evidence JSON",
+    )
+    preview_smoke_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
+
     migrate_e2e_cmd = subparsers.add_parser(
         MIGRATE_E2E_COMMAND_NAME,
-        help="Run parse/map-api/gen-ui/fidelity-audit/sync-preview for one XML and emit consolidated summary JSON",
+        help="Run parse/map-api/gen-ui/fidelity-audit/sync-preview/preview-smoke for one XML and emit consolidated summary JSON",
     )
     migrate_e2e_cmd.add_argument("xml_path", help="Path to source XML file")
     migrate_e2e_cmd.add_argument(
@@ -636,6 +665,21 @@ def run_prototype_accept(args: argparse.Namespace) -> int:
     return 0 if report.verdict == "pass" else 2
 
 
+def run_preview_smoke(args: argparse.Namespace) -> int:
+    report = smoke_preview_host(
+        generated_screens_dir=args.generated_screens_dir,
+        preview_host_dir=args.preview_host_dir,
+        manifest_file=args.manifest_file,
+        registry_generated_file=args.registry_generated_file,
+    )
+    if args.report_out:
+        report_out = Path(args.report_out).resolve()
+        _write_json_file(report_out, report.to_dict(), pretty=args.pretty)
+    if report.has_unresolved_modules():
+        return 2
+    return 0
+
+
 def run_migrate_e2e(args: argparse.Namespace) -> int:
     xml_path = Path(args.xml_path).resolve()
     out_dir = Path(args.out_dir).resolve()
@@ -667,6 +711,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         if args.preview_report_out
         else out_dir / f"{stem}.preview-sync-report.json"
     )
+    preview_smoke_report_out = out_dir / f"{stem}.preview-smoke-report.json"
     summary_out = (
         Path(args.summary_out).resolve()
         if args.summary_out
@@ -679,6 +724,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         "gen_ui": {"status": "pending"},
         "fidelity_audit": {"status": "pending"},
         "sync_preview": {"status": "pending"},
+        "preview_smoke": {"status": "pending"},
     }
     generated_files: list[str] = []
     errors: list[str] = []
@@ -692,6 +738,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         "gen_ui_report": str(ui_report_out),
         "fidelity_audit_report": str(fidelity_report_out),
         "preview_sync_report": str(preview_report_out),
+        "preview_smoke_report": str(preview_smoke_report_out),
         "consolidated_summary": str(summary_out),
     }
 
@@ -707,6 +754,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
         stage_status["gen_ui"] = {"status": "skipped", "reason": "parse_failed"}
         stage_status["fidelity_audit"] = {"status": "skipped", "reason": "parse_failed"}
         stage_status["sync_preview"] = {"status": "skipped", "reason": "parse_failed"}
+        stage_status["preview_smoke"] = {"status": "skipped", "reason": "parse_failed"}
         errors.append(f"parse: {error_message}")
         exit_code = 2
     else:
@@ -737,6 +785,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
             stage_status["gen_ui"] = {"status": "skipped", "reason": "map_api_exception"}
             stage_status["fidelity_audit"] = {"status": "skipped", "reason": "map_api_exception"}
             stage_status["sync_preview"] = {"status": "skipped", "reason": "map_api_exception"}
+            stage_status["preview_smoke"] = {"status": "skipped", "reason": "map_api_exception"}
             errors.append(f"map_api: {error_message}")
             exit_code = 2
         else:
@@ -772,6 +821,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                 stage_status["gen_ui"] = {"status": "failure", "error": error_message}
                 stage_status["fidelity_audit"] = {"status": "skipped", "reason": "gen_ui_failed"}
                 stage_status["sync_preview"] = {"status": "skipped", "reason": "gen_ui_failed"}
+                stage_status["preview_smoke"] = {"status": "skipped", "reason": "gen_ui_failed"}
                 errors.append(f"gen_ui: {error_message}")
                 exit_code = 2
             else:
@@ -873,6 +923,10 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                         "error": error_message,
                         "generated_screens_dir": str(generated_screens_dir),
                     }
+                    stage_status["preview_smoke"] = {
+                        "status": "skipped",
+                        "reason": "sync_preview_failed",
+                    }
                     errors.append(f"sync_preview: {error_message}")
                     exit_code = 2
                 else:
@@ -895,6 +949,47 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     warnings.extend(
                         f"sync_preview: {message}" for message in preview_report.warnings
                     )
+
+                    try:
+                        preview_smoke_report = smoke_preview_host(
+                            generated_screens_dir=generated_screens_dir,
+                            preview_host_dir=args.preview_host_dir,
+                            manifest_file=args.manifest_file,
+                            registry_generated_file=args.registry_generated_file,
+                        )
+                    except Exception as exc:  # pragma: no cover - defensive path
+                        error_message = f"{type(exc).__name__}: {exc}"
+                        print(error_message, file=sys.stderr)
+                        stage_status["preview_smoke"] = {
+                            "status": "failure",
+                            "error": error_message,
+                        }
+                        errors.append(f"preview_smoke: {error_message}")
+                        exit_code = 2
+                    else:
+                        _write_json_file(
+                            preview_smoke_report_out,
+                            preview_smoke_report.to_dict(),
+                            pretty=args.pretty,
+                        )
+                        unresolved = preview_smoke_report.unresolved_module_count
+                        stage_status["preview_smoke"] = {
+                            "status": "failure" if unresolved > 0 else "success",
+                            "report_file": str(preview_smoke_report_out),
+                            "generated_screen_count": preview_smoke_report.generated_screen_count,
+                            "route_count": len(preview_smoke_report.route_paths),
+                            "unresolved_module_count": unresolved,
+                        }
+                        warnings.extend(
+                            f"preview_smoke: {message}"
+                            for message in preview_smoke_report.warnings
+                        )
+                        if unresolved > 0:
+                            errors.append(
+                                "preview_smoke: unresolved generated modules detected "
+                                f"({unresolved})"
+                            )
+                            exit_code = 2
 
     summary = {
         "generated_at_utc": datetime.now(UTC).isoformat(),
@@ -934,6 +1029,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_sync_preview(args)
         if args.command == PROTOTYPE_ACCEPT_COMMAND_NAME:
             return run_prototype_accept(args)
+        if args.command == "preview-smoke":
+            return run_preview_smoke(args)
         if args.command == MIGRATE_E2E_COMMAND_NAME:
             return run_migrate_e2e(args)
     except ParseStrictError as exc:

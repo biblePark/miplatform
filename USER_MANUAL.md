@@ -299,7 +299,41 @@ PYTHONPATH=src python3 -m migrator sync-preview \
 - `preview-host/src/screens/registry.generated.ts`
 - `out/preview-sync-report.json`
 
+### 4.8 Preview Host Smoke 증거 생성 (R10)
+
+생성된 화면 모듈이 실제로 로더/경로에서 해석 가능한지 증거 리포트를 생성합니다.
+
+```bash
+PYTHONPATH=src python3 -m migrator preview-smoke \
+  --generated-screens-dir generated/frontend/src/screens \
+  --preview-host-dir preview-host \
+  --report-out out/preview-smoke-report.json \
+  --pretty
+```
+
+산출물:
+
+- `out/preview-smoke-report.json`
+
+확인 포인트:
+
+- `screens[]`: 화면별 `module_present`, `loader_registered`, `route_resolvable`
+- `route_paths[]`: 생성 화면 기준 `/preview/<screenId>` 목록
+- `unresolved_module_count`: 0이어야 통과 (0보다 크면 명령 종료코드 2)
+
 ## 5. 브라우저에서 결과 확인
+
+Smoke 확인:
+
+```bash
+PYTHONPATH=src python3 -m migrator preview-smoke \
+  --generated-screens-dir generated/frontend/src/screens \
+  --preview-host-dir preview-host \
+  --report-out out/preview-smoke-report.json \
+  --pretty
+```
+
+`out/preview-smoke-report.json`에서 `unresolved_module_count == 0` 확인 후 dev/build 검증을 진행합니다.
 
 Preview Host 실행:
 
@@ -339,6 +373,7 @@ npm run build
 ### 6.3 미리보기 화면이 열리지 않음
 
 - `sync-preview`를 먼저 실행했는지 확인
+- `preview-smoke` 결과에서 `unresolved_module_count`가 0인지 확인
 - `screens.manifest.json`에 대상 `screenId`가 있는지 확인
 - `preview-host`에서 `npm install` 후 `npm run dev` 재실행
 
@@ -349,5 +384,6 @@ npm run build
 3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
 4. `run_real_sample_e2e_regression.py`로 실샘플 회귀 실행
 5. `out/real-sample-e2e-regression/regression-summary.json`에서 실패/위험 추세 확인
-6. `preview-host`에서 `npm run dev`로 육안 확인
-7. `preview-host`에서 `npm run build` 최종 확인
+6. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
+7. `preview-host`에서 `npm run dev`로 육안 확인
+8. `preview-host`에서 `npm run build` 최종 확인

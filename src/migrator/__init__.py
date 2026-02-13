@@ -48,6 +48,11 @@ from .prototype_acceptance import (
     build_prototype_acceptance_thresholds,
     generate_prototype_acceptance_report,
 )
+from .preview_smoke import (
+    PreviewSmokeReport,
+    PreviewSmokeScreenEvidence,
+    smoke_preview_host,
+)
 from .runtime_wiring import RuntimeWiringContract, build_runtime_wiring_contract
 from .validator import (
     compute_canonical_hash_pair,
@@ -62,6 +67,8 @@ __all__ = [
     "ManifestContractError",
     "GeneratedScreenEntry",
     "PreviewSyncReport",
+    "PreviewSmokeReport",
+    "PreviewSmokeScreenEvidence",
     "ScreenManifestEntry",
     "ScreensManifest",
     "BehaviorEventActionBinding",
@@ -99,4 +106,5 @@ __all__ = [
     "sync_preview_host",
     "build_prototype_acceptance_thresholds",
     "generate_prototype_acceptance_report",
+    "smoke_preview_host",
 ]
