@@ -165,6 +165,43 @@ PYTHONPATH=src python3 scripts/run_real_sample_e2e_regression.py \
 - 위험 추세: `risk_trends.extraction`, `risk_trends.mapping`, `risk_trends.fidelity`
 - 미해결 XML 파싱 차단 이슈: `malformed_xml_blockers`
 
+### 4.2.1 라운드 베이스라인 스냅샷/델타 비교 (R10)
+
+실샘플 회귀 KPI의 라운드 간 변동을 추적하려면, 기준 라운드의 스냅샷을 저장한 뒤 다음 라운드에서 델타 비교를 수행합니다.
+
+```bash
+# 기준 라운드 스냅샷 저장 (예: R09)
+python3 scripts/real_sample_baseline.py snapshot \
+  --summary-json out/real-sample-e2e-regression/regression-summary.json \
+  --round R09 \
+  --pretty
+```
+
+```bash
+# 현재 라운드 비교 + 허용치 초과 시 실패 (예: R10)
+python3 scripts/real_sample_baseline.py diff \
+  --current-summary-json out/real-sample-e2e-regression/regression-summary.json \
+  --baseline-round R09 \
+  --current-round R10 \
+  --tolerances-file ops/real_sample_baseline_tolerances.json \
+  --strict \
+  --pretty
+```
+
+베이스라인 산출물 경로:
+
+- 스냅샷 JSON: `out/real-sample-e2e-regression/baselines/<ROUND>/baseline-summary.json`
+- 스냅샷 Markdown: `out/real-sample-e2e-regression/baselines/<ROUND>/baseline-summary.md`
+- 델타 JSON: `out/real-sample-e2e-regression/baseline-diff.json`
+- 델타 Markdown: `out/real-sample-e2e-regression/baseline-diff.md`
+- KPI 허용치 설정: `ops/real_sample_baseline_tolerances.json`
+
+검증 포인트:
+
+- 델타 리포트가 `stage.*`/`risk.*` 차원별로 `regression`/`improvement`를 분류하는지
+- `tolerance_evaluation.violations`가 허용치 초과 KPI를 정확히 기록하는지
+- `--strict` 실행 시 허용치 초과가 있으면 종료 코드 `2`로 실패하는지
+
 ### 4.3 단일 XML 파싱 검증
 
 ```bash
@@ -384,6 +421,8 @@ npm run build
 3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
 4. `run_real_sample_e2e_regression.py`로 실샘플 회귀 실행
 5. `out/real-sample-e2e-regression/regression-summary.json`에서 실패/위험 추세 확인
-6. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
-7. `preview-host`에서 `npm run dev`로 육안 확인
-8. `preview-host`에서 `npm run build` 최종 확인
+6. `real_sample_baseline.py snapshot`으로 기준 라운드 베이스라인 저장
+7. `real_sample_baseline.py diff --strict`로 라운드 델타/허용치 게이트 검증
+8. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
+9. `preview-host`에서 `npm run dev`로 육안 확인
+10. `preview-host`에서 `npm run build` 최종 확인

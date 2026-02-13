@@ -1,0 +1,24 @@
+{
+  "lower_is_better": {
+    "totals.failure_count": 0,
+    "malformed_xml_blockers.count": 0,
+    "stage.parse.failure": 0,
+    "stage.map_api.failure": 0,
+    "stage.gen_ui.failure": 0,
+    "stage.fidelity_audit.failure": 0,
+    "stage.sync_preview.failure": 0,
+    "risk.extraction.files_with_risk": 0,
+    "risk.extraction.gate_failure_total": 0,
+    "risk.mapping.files_with_risk": 0,
+    "risk.mapping.mapped_failure_total": 0,
+    "risk.mapping.unsupported_total": 0,
+    "risk.fidelity.files_with_risk": 0,
+    "risk.fidelity.gate_failure_total": 0,
+    "risk.fidelity.ui_fallback_warning_total": 0,
+    "risk.fidelity.missing_node_total": 0,
+    "risk.fidelity.position_style_nodes_with_risk_total": 0
+  },
+  "higher_is_better": {
+    "totals.success_count": 0
+  }
+}
