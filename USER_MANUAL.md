@@ -86,6 +86,41 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 - `unsupported_event_bindings`
 - `generated_file_references` 목록
 
+### 4.1.1 프로토타입 수용 KPI 판정 (R10)
+
+`migrate-e2e` 요약 리포트(`*.migration-summary.json`)를 읽어 프로토타입 수용 여부를 pass/fail로 판정합니다.
+
+```bash
+PYTHONPATH=src python3 -m migrator prototype-accept out/e2e \
+  --report-out out/e2e/prototype-acceptance.json \
+  --pretty
+```
+
+기본 임계치(default):
+
+- `max_failed_migration_count = 0`
+- `max_fidelity_risk_count = 0`
+- `min_event_runtime_wiring_coverage_ratio = 1.0`
+- `max_unsupported_event_bindings = 0`
+- `max_unresolved_transaction_adapter_signals = 0`
+
+임계치 커스터마이즈:
+
+```bash
+PYTHONPATH=src python3 -m migrator prototype-accept out/e2e \
+  --report-out out/e2e/prototype-acceptance.json \
+  --thresholds-file out/e2e/acceptance-thresholds.json \
+  --max-unresolved-transaction-adapter-signals 5 \
+  --pretty
+```
+
+확인 포인트:
+
+- `verdict` (`pass`/`fail`)
+- `kpi_results`별 actual/threshold 비교
+- `totals.fidelity_risk_count`, `totals.unsupported_event_bindings`, `totals.unresolved_transaction_adapter_signals`
+- `evaluations[*]`의 파일별 위험 세부값
+
 ### 4.2 실샘플 E2E 회귀 실행 (R08)
 
 합의된 실샘플 XML 세트 전체를 대상으로 `migrate-e2e`를 반복 실행하고, 추출/매핑/정합성(fidelity) 위험 추세를 통합 리포트로 생성합니다.

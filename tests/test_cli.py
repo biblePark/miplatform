@@ -354,6 +354,118 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["stages"]["sync_preview"]["status"], "success")
             self.assertIn("map_api: mapping failures detected (1)", payload["errors"])
 
+    def test_prototype_accept_command_returns_pass_for_clean_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            actions_file = workspace / "clean.actions.ts"
+            actions_file.write_text(
+                "export function createScreenBehaviorActions() { return {}; }\n",
+                encoding="utf-8",
+            )
+            summary_file = workspace / "clean.migration-summary.json"
+            summary_file.write_text(
+                json.dumps(
+                    {
+                        "screen_id": "CleanScreen",
+                        "overall_status": "success",
+                        "stages": {
+                            "map_api": {
+                                "total_transactions": 1,
+                            },
+                            "fidelity_audit": {
+                                "risk_detected": False,
+                                "missing_node_count": 0,
+                                "position_style_nodes_with_risk": 0,
+                            },
+                            "gen_ui": {
+                                "total_event_attributes": 2,
+                                "runtime_wired_event_props": 2,
+                                "unsupported_event_bindings": 0,
+                                "behavior_actions_file": str(actions_file),
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            report_out = workspace / "prototype-acceptance.json"
+
+            rc = main(
+                [
+                    "prototype-accept",
+                    str(summary_file),
+                    "--report-out",
+                    str(report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 0)
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["verdict"], "pass")
+            self.assertEqual(payload["totals"]["total_migration_summaries"], 1)
+            self.assertEqual(payload["totals"]["fidelity_risk_count"], 0)
+            self.assertEqual(payload["totals"]["unsupported_event_bindings"], 0)
+            self.assertEqual(payload["totals"]["unresolved_transaction_adapter_signals"], 0)
+
+    def test_prototype_accept_command_returns_failure_for_risk_summary(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            actions_file = workspace / "risk.actions.ts"
+            actions_file.write_text(
+                'const marker = "UNIMPLEMENTED_TRANSACTION_ADAPTER";\n',
+                encoding="utf-8",
+            )
+            summary_file = workspace / "risk.migration-summary.json"
+            summary_file.write_text(
+                json.dumps(
+                    {
+                        "screen_id": "RiskScreen",
+                        "overall_status": "failure",
+                        "stages": {
+                            "map_api": {
+                                "total_transactions": 1,
+                            },
+                            "fidelity_audit": {
+                                "risk_detected": True,
+                                "missing_node_count": 1,
+                                "position_style_nodes_with_risk": 1,
+                            },
+                            "gen_ui": {
+                                "total_event_attributes": 2,
+                                "runtime_wired_event_props": 1,
+                                "unsupported_event_bindings": 1,
+                                "behavior_actions_file": str(actions_file),
+                            },
+                        },
+                    },
+                    ensure_ascii=False,
+                    indent=2,
+                ),
+                encoding="utf-8",
+            )
+            report_out = workspace / "prototype-acceptance.json"
+
+            rc = main(
+                [
+                    "prototype-accept",
+                    str(summary_file),
+                    "--report-out",
+                    str(report_out),
+                    "--pretty",
+                ]
+            )
+
+            self.assertEqual(rc, 2)
+            payload = json.loads(report_out.read_text(encoding="utf-8"))
+            self.assertEqual(payload["verdict"], "fail")
+            self.assertEqual(payload["totals"]["failed_migration_count"], 1)
+            self.assertEqual(payload["totals"]["fidelity_risk_count"], 1)
+            self.assertEqual(payload["totals"]["unsupported_event_bindings"], 1)
+            self.assertEqual(payload["totals"]["unresolved_transaction_adapter_signals"], 1)
+
     def test_fidelity_audit_command_fails_in_strict_mode_for_missing_nodes(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:
             workspace = Path(tmp_dir)
