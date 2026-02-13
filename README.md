@@ -105,6 +105,26 @@ This command runs `migrate-e2e` for each XML in the sample set and writes:
 - Per-sample stage reports and generated artifacts under `out/real-sample-e2e-regression/runs/<index>-<xml-stem>/`
 - Summary includes success/failure totals, stage-level failure counts/details, top warnings, extraction/mapping/fidelity risk trends, and unresolved malformed/XML blockers
 
+Persist baseline snapshots and compare KPI deltas between rounds:
+
+```bash
+# 1) Persist agreed baseline snapshot after baseline round run (example: R09)
+python3 scripts/real_sample_baseline.py snapshot --summary-json out/real-sample-e2e-regression/regression-summary.json --round R09 --pretty
+
+# 2) Compare current run (example: R10) against baseline with strict tolerance gate
+python3 scripts/real_sample_baseline.py diff --current-summary-json out/real-sample-e2e-regression/regression-summary.json --baseline-round R09 --current-round R10 --tolerances-file ops/real_sample_baseline_tolerances.json --strict --pretty
+```
+
+Baseline lifecycle and artifacts:
+
+- Baseline snapshot JSON: `out/real-sample-e2e-regression/baselines/<ROUND>/baseline-summary.json`
+- Baseline snapshot Markdown: `out/real-sample-e2e-regression/baselines/<ROUND>/baseline-summary.md`
+- Baseline diff JSON: `out/real-sample-e2e-regression/baseline-diff.json`
+- Baseline diff Markdown: `out/real-sample-e2e-regression/baseline-diff.md`
+- Tolerance config (default): `ops/real_sample_baseline_tolerances.json`
+- Diff report is deterministic and classifies regressions/improvements by `stage.*` and `risk.*` KPI dimensions
+- `diff --strict` exits with code `2` when adverse KPI movement exceeds configured tolerances
+
 Sync generated UI screens into preview-host manifest + registry:
 
 ```bash
@@ -188,6 +208,7 @@ scripts/setup_round_parallel.sh r04 main api-mapping ui-preview
 - End-to-end orchestration CLI (`migrate-e2e`) with consolidated migration summary report.
 - Deterministic runtime wiring contract module (`src/migrator/runtime_wiring.py`) used by both `gen-ui` and `gen-behavior-store`.
 - Real-sample regression runner (`scripts/run_real_sample_e2e_regression.py`) with consolidated risk trend reporting.
+- Real-sample baseline snapshot/diff tooling (`scripts/real_sample_baseline.py`) with tolerance gate config (`ops/real_sample_baseline_tolerances.json`).
 - Multi-agent templates under `docs/multi-agent/`.
 - Subagent config examples under `ops/subagents/`.
 - Parallel setup and brief rendering scripts under `scripts/`.
