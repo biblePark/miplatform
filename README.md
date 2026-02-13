@@ -92,6 +92,18 @@ This command executes parse/map-api/gen-ui/fidelity-audit/sync-preview in sequen
 - Consolidated summary report: `out/e2e/<xml-stem>.migration-summary.json`
 - Summary includes stage statuses, report file references, and generated file references for verification
 
+Run prototype acceptance KPI gate on one or more migration summaries:
+
+```bash
+PYTHONPATH=src python3 -m migrator prototype-accept out/e2e --report-out out/e2e/prototype-acceptance.json --pretty
+```
+
+Default thresholds require zero migration failures, zero fidelity risks, 100% runtime event wiring coverage, zero unsupported events, and zero unresolved transaction adapter readiness signals. Override thresholds with CLI flags or a JSON file:
+
+```bash
+PYTHONPATH=src python3 -m migrator prototype-accept out/e2e --report-out out/e2e/prototype-acceptance.json --thresholds-file out/e2e/acceptance-thresholds.json --max-unresolved-transaction-adapter-signals 5 --pretty
+```
+
 Run real-sample migrate-e2e regression across a sample set:
 
 ```bash

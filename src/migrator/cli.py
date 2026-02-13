@@ -16,13 +16,18 @@ from .fidelity_audit import (
 )
 from .models import ParseConfig
 from .parser import ParseStrictError, parse_xml_file
-from .ui_codegen import generate_ui_codegen_artifacts
 from .preview_sync import sync_preview_host
+from .prototype_acceptance import (
+    build_prototype_acceptance_thresholds,
+    generate_prototype_acceptance_report,
+)
+from .ui_codegen import generate_ui_codegen_artifacts
 
 STRICT_GATE_FAILURE_PREFIX = "Strict parse failed for gates:"
 XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
 FAILURE_LEADERBOARD_LIMIT = 10
 MIGRATE_E2E_COMMAND_NAME = "migrate-e2e"
+PROTOTYPE_ACCEPT_COMMAND_NAME = "prototype-accept"
 
 
 def _load_known_tags(path: str | None) -> set[str] | None:
@@ -377,6 +382,55 @@ def build_parser() -> argparse.ArgumentParser:
     _add_common_parse_options(migrate_e2e_cmd)
     migrate_e2e_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
+    prototype_accept_cmd = subparsers.add_parser(
+        PROTOTYPE_ACCEPT_COMMAND_NAME,
+        help="Evaluate migrate-e2e summary artifacts against prototype KPI thresholds",
+    )
+    prototype_accept_cmd.add_argument(
+        "summary_artifacts",
+        nargs="+",
+        help="Migration summary JSON file(s) or directories containing *.migration-summary.json",
+    )
+    prototype_accept_cmd.add_argument(
+        "--report-out",
+        required=True,
+        help="Output path for prototype acceptance report JSON",
+    )
+    prototype_accept_cmd.add_argument(
+        "--thresholds-file",
+        help="Optional JSON file with KPI threshold overrides",
+    )
+    prototype_accept_cmd.add_argument(
+        "--max-failed-migration-count",
+        type=int,
+        help="Maximum allowed count of non-success migration summaries",
+    )
+    prototype_accept_cmd.add_argument(
+        "--max-fidelity-risk-count",
+        type=int,
+        help="Maximum allowed count of summaries with fidelity risks",
+    )
+    prototype_accept_cmd.add_argument(
+        "--min-event-runtime-wiring-coverage-ratio",
+        type=float,
+        help="Minimum required aggregate runtime event wiring coverage ratio (0.0-1.0)",
+    )
+    prototype_accept_cmd.add_argument(
+        "--max-unsupported-event-bindings",
+        type=int,
+        help="Maximum allowed aggregate unsupported event bindings",
+    )
+    prototype_accept_cmd.add_argument(
+        "--max-unresolved-transaction-adapter-signals",
+        type=int,
+        help="Maximum allowed aggregate unresolved transaction adapter readiness signals",
+    )
+    prototype_accept_cmd.add_argument(
+        "--pretty",
+        action="store_true",
+        help="Pretty-print JSON outputs",
+    )
+
     return parser
 
 
@@ -548,6 +602,38 @@ def run_sync_preview(args: argparse.Namespace) -> int:
         report_out = Path(args.report_out).resolve()
         _write_json_file(report_out, report.to_dict(), pretty=args.pretty)
     return 0
+
+
+def run_prototype_accept(args: argparse.Namespace) -> int:
+    threshold_overrides: dict[str, object] = {}
+    if args.max_failed_migration_count is not None:
+        threshold_overrides["max_failed_migration_count"] = args.max_failed_migration_count
+    if args.max_fidelity_risk_count is not None:
+        threshold_overrides["max_fidelity_risk_count"] = args.max_fidelity_risk_count
+    if args.min_event_runtime_wiring_coverage_ratio is not None:
+        threshold_overrides["min_event_runtime_wiring_coverage_ratio"] = (
+            args.min_event_runtime_wiring_coverage_ratio
+        )
+    if args.max_unsupported_event_bindings is not None:
+        threshold_overrides["max_unsupported_event_bindings"] = (
+            args.max_unsupported_event_bindings
+        )
+    if args.max_unresolved_transaction_adapter_signals is not None:
+        threshold_overrides["max_unresolved_transaction_adapter_signals"] = (
+            args.max_unresolved_transaction_adapter_signals
+        )
+
+    thresholds = build_prototype_acceptance_thresholds(
+        thresholds_file=args.thresholds_file,
+        overrides=threshold_overrides,
+    )
+    report = generate_prototype_acceptance_report(
+        args.summary_artifacts,
+        thresholds=thresholds,
+    )
+    report_out = Path(args.report_out).resolve()
+    _write_json_file(report_out, report.to_dict(), pretty=args.pretty)
+    return 0 if report.verdict == "pass" else 2
 
 
 def run_migrate_e2e(args: argparse.Namespace) -> int:
@@ -846,6 +932,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_gen_behavior_store(args)
         if args.command == "sync-preview":
             return run_sync_preview(args)
+        if args.command == PROTOTYPE_ACCEPT_COMMAND_NAME:
+            return run_prototype_accept(args)
         if args.command == MIGRATE_E2E_COMMAND_NAME:
             return run_migrate_e2e(args)
     except ParseStrictError as exc:

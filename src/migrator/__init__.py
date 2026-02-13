@@ -39,6 +39,15 @@ from .preview_sync import (
     PreviewSyncReport,
     sync_preview_host,
 )
+from .prototype_acceptance import (
+    PrototypeAcceptanceKpiResult,
+    PrototypeAcceptanceReport,
+    PrototypeAcceptanceSummaryEvaluation,
+    PrototypeAcceptanceThresholds,
+    PrototypeAcceptanceTotals,
+    build_prototype_acceptance_thresholds,
+    generate_prototype_acceptance_report,
+)
 from .runtime_wiring import RuntimeWiringContract, build_runtime_wiring_contract
 from .validator import (
     compute_canonical_hash_pair,
@@ -65,6 +74,11 @@ __all__ = [
     "FidelityGeneratedNodeInventory",
     "FidelityPositionStyleCoverageRisk",
     "FidelitySourceNodeInventory",
+    "PrototypeAcceptanceKpiResult",
+    "PrototypeAcceptanceReport",
+    "PrototypeAcceptanceSummaryEvaluation",
+    "PrototypeAcceptanceThresholds",
+    "PrototypeAcceptanceTotals",
     "RuntimeWiringContract",
     "UnsupportedUiEventBinding",
     "UiCodegenReport",
@@ -83,4 +97,6 @@ __all__ = [
     "plan_behavior_store_scaffold",
     "plan_event_action_bindings",
     "sync_preview_host",
+    "build_prototype_acceptance_thresholds",
+    "generate_prototype_acceptance_report",
 ]
