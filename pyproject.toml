@@ -10,9 +10,13 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = []
 
+[project.optional-dependencies]
+desktop = ["PySide6>=6.6"]
+
 [project.scripts]
 mifl-migrator = "migrator.cli:main"
 mifl-migrator-api = "migrator.orchestrator_api:main"
+mifl-migrator-desktop = "migrator.desktop.app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
