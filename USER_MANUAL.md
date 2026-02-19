@@ -4,9 +4,12 @@
 
 이 프로젝트는 레거시 MIPLATFORM XML 화면/기능 정의를 분석하여 아래 형태로 마이그레이션하기 위한 도구입니다.
 
+- 운영 GUI: `Python + PySide6` 데스크톱 앱 (R13)
 - Frontend: `Vite + React 19 + MUI v7 + Zustand` 기반 산출물
 - API: `Express (JavaScript)` 라우트/서비스 스캐폴드
 - 변환 엔진: `Python`
+
+웹(`preview-host`)은 운영 GUI가 아니라, 생성된 React 화면을 확인하는 미리보기 브리지 용도입니다.
 
 핵심 목표는 다음 3가지입니다.
 
@@ -20,6 +23,7 @@
 
 - `python3`
 - `node` + `npm` (preview-host 확인용)
+- `PySide6` (데스크톱 GUI 실행 시 필요, 권장 설치: `pip install 'miflatform-migrator[desktop]'` 또는 `pip install PySide6`)
 
 프로젝트 루트로 이동:
 
@@ -47,6 +51,38 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 - `data/`, `out/`, `generated/`, `*.xml`은 기본적으로 Git 추적 대상이 아닙니다.
 
 ## 4. 기본 작업 순서
+
+### 4.0 데스크톱 우선 실행 경로 (R13)
+
+R13 기본 운영 경로는 CLI 직접 호출이 아니라 데스크톱 GUI입니다.
+
+데스크톱 런치 계약 명령:
+
+```bash
+PYTHONPATH=src python3 -m migrator desktop-shell
+```
+
+환경/머지 상태 점검용(이벤트 루프 미진입):
+
+```bash
+PYTHONPATH=src python3 -m migrator desktop-shell --no-event-loop
+```
+
+데스크톱 워크플로우(운영 기준):
+
+1. 실행 모드 선택: `Single XML` 또는 `Batch Folder`
+2. 소스 입력 선택:
+- `Single XML`: XML 파일 picker
+- `Batch Folder`: 폴더 picker + `recursive`/`glob` 조건으로 실행 큐 구성
+3. 출력 폴더 picker로 run 산출물 루트 지정
+4. 실행 후 상태/로그 패널에서 단계별 결과 확인
+5. 필요 시 실패 건만 재시도 큐(실패 전용 배치 플랜) 생성
+6. 생성 결과 검증이 필요할 때만 웹 preview route(`/preview/<screenId>`)를 열어 React 렌더링 확인
+
+참고:
+
+- 데스크톱 모듈이 아직 합쳐지지 않았거나 `PySide6`가 없으면 `desktop-shell`은 종료 코드 `2`와 안내 메시지를 반환합니다.
+- 이 경우 아래 CLI 경로(`4.1` 이후)를 동일 계약 검증용 fallback으로 사용합니다.
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
@@ -394,7 +430,12 @@ PYTHONPATH=src python3 -m migrator preview-smoke \
 - `route_paths[]`: 생성 화면 기준 `/preview/<screenId>` 목록
 - `unresolved_module_count`: 0이어야 통과 (0보다 크면 명령 종료코드 2)
 
-## 5. 브라우저에서 결과 확인
+## 5. 웹 미리보기로 결과 확인 (검증 전용)
+
+주의:
+
+- 웹은 운영 GUI가 아니라 React 산출물 검증 브리지입니다.
+- 실행 제어(파일/폴더 선택, 배치 큐, 상태 관찰)는 데스크톱 GUI가 기본 경로입니다.
 
 Smoke 확인:
 
@@ -438,7 +479,13 @@ python3 -m unittest -v tests.test_orchestrator_api
 - `test_post_jobs_cancel_marks_running_job_as_canceled`
 - `test_history_retry_flow_records_failed_then_successful_reexecution`
 
-R12 QA 게이트 묶음 실행:
+R13 QA 게이트 묶음 실행:
+
+```bash
+python3 scripts/run_r13_qa_gates.py
+```
+
+R12 하위 호환 게이트 묶음 실행:
 
 ```bash
 python3 scripts/run_r12_qa_gates.py
@@ -484,17 +531,31 @@ npm run build
 - `screens.manifest.json`에 대상 `screenId`가 있는지 확인
 - `preview-host`에서 `npm install` 후 `npm run dev` 재실행
 
+### 6.4 데스크톱 셸이 실행되지 않음
+
+- 증상: `desktop-shell` 실행 시 종료 코드 `2` 또는 `Desktop shell module is unavailable` 메시지
+- 원인:
+- R13 데스크톱 lane 미병합 상태
+- `PySide6` 미설치
+- 조치:
+- `pip install 'miflatform-migrator[desktop]'` 또는 `pip install PySide6`
+- R13 데스크톱 관련 브랜치 머지 상태 확인
+- 임시로 CLI fallback(`migrate-e2e`, `run_r13_qa_gates.py`)으로 동일 계약 검증 진행
+
 ## 7. 권장 실행 체크리스트
 
 1. XML 입력 배치 (`data/input/xml`)
-2. `migrate-e2e` 실행으로 전체 파이프라인 1회 수행
-3. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
-4. `run_real_sample_e2e_regression.py`로 실샘플 회귀 실행
-5. `out/real-sample-e2e-regression/regression-summary.json`에서 실패/위험 추세 확인
-6. `real_sample_baseline.py snapshot`으로 기준 라운드 베이스라인 저장
-7. `real_sample_baseline.py diff --strict`로 라운드 델타/허용치 게이트 검증
-8. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
-9. `python3 -m unittest -v tests.test_orchestrator_api`로 Studio/Orchestrator 연계 스모크 확인
-10. `python3 scripts/run_r12_qa_gates.py`로 R12 게이트 묶음 검증
-11. `preview-host`에서 `npm run dev`로 육안 확인
-12. `preview-host`에서 `npm run build` 최종 확인
+2. `desktop-shell` 실행 (또는 `--no-event-loop` 계약 점검)으로 데스크톱 경로 준비 확인
+3. 데스크톱 GUI에서 `Single XML`/`Batch Folder` 모드 선택 + 입력/출력 picker 설정
+4. `migrate-e2e` 실행으로 전체 파이프라인 1회 수행 (데스크톱 또는 CLI fallback)
+5. 통합 요약 리포트(`out/e2e/<파일명>.migration-summary.json`) 검토
+6. `run_real_sample_e2e_regression.py`로 실샘플 회귀 실행
+7. `out/real-sample-e2e-regression/regression-summary.json`에서 실패/위험 추세 확인
+8. `real_sample_baseline.py snapshot`으로 기준 라운드 베이스라인 저장
+9. `real_sample_baseline.py diff --strict`로 라운드 델타/허용치 게이트 검증
+10. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
+11. `python3 -m unittest -v tests.test_orchestrator_api`로 API 하위 호환 스모크 확인
+12. `python3 scripts/run_r13_qa_gates.py`로 R13 게이트 묶음 검증
+13. `python3 scripts/run_r12_qa_gates.py`로 R12 하위 호환 게이트 검증
+14. `preview-host`에서 `npm run dev`로 육안 확인 (필요 시)
+15. `preview-host`에서 `npm run build` 최종 확인

@@ -29,6 +29,7 @@ XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
 FAILURE_LEADERBOARD_LIMIT = 10
 MIGRATE_E2E_COMMAND_NAME = "migrate-e2e"
 PROTOTYPE_ACCEPT_COMMAND_NAME = "prototype-accept"
+DESKTOP_SHELL_COMMAND_NAME = "desktop-shell"
 UI_RENDER_POLICY_MODE_CHOICES = ("strict", "mui", "auto")
 
 
@@ -497,6 +498,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pretty-print JSON outputs",
     )
 
+    desktop_shell_cmd = subparsers.add_parser(
+        DESKTOP_SHELL_COMMAND_NAME,
+        help="Launch desktop operator shell contract (PySide6)",
+    )
+    desktop_shell_cmd.add_argument(
+        "--no-event-loop",
+        action="store_true",
+        help="Bootstrap desktop shell without entering the Qt event loop",
+    )
+
     return parser
 
 
@@ -717,6 +728,19 @@ def run_preview_smoke(args: argparse.Namespace) -> int:
     if report.has_unresolved_modules():
         return 2
     return 0
+
+
+def run_desktop_shell(args: argparse.Namespace) -> int:
+    try:
+        from .desktop import launch_desktop_shell  # type: ignore
+    except ImportError:
+        print(
+            "Desktop shell module is unavailable. "
+            "Merge R13 desktop lanes and install desktop deps (PySide6) first.",
+            file=sys.stderr,
+        )
+        return 2
+    return int(launch_desktop_shell(exec_event_loop=not args.no_event_loop))
 
 
 def run_migrate_e2e(args: argparse.Namespace) -> int:
@@ -1079,6 +1103,8 @@ def main(argv: list[str] | None = None) -> int:
             return run_prototype_accept(args)
         if args.command == "preview-smoke":
             return run_preview_smoke(args)
+        if args.command == DESKTOP_SHELL_COMMAND_NAME:
+            return run_desktop_shell(args)
         if args.command == MIGRATE_E2E_COMMAND_NAME:
             return run_migrate_e2e(args)
     except ParseStrictError as exc:

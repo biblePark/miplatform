@@ -4,7 +4,7 @@
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/PROJECT_RULES.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/PROJECT_CONTEXT.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/TECH_SPEC.md`
-- `/Users/biblepark/Desktop/works/miflatform-migrator/docs/QA_GATES.md` (R12: Studio/Orchestrator smoke + 운영 시나리오 게이트 포함)
+- `/Users/biblepark/Desktop/works/miflatform-migrator/docs/QA_GATES.md` (R13: desktop launch/service contract + preview bridge smoke + R12 하위 호환 게이트 포함)
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/ORCHESTRATOR_API.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/CODE_STYLE.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/WORKTREE_RUNBOOK.md`
@@ -22,6 +22,6 @@ Read order recommendation:
 1. `PROJECT_RULES`
 2. `PROJECT_CONTEXT`
 3. `TECH_SPEC`
-4. `QA_GATES` (R12)
+4. `QA_GATES` (R13)
 5. `WORKTREE_RUNBOOK`
 6. `docs/multi-agent/README.md`
