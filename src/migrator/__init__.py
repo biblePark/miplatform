@@ -53,6 +53,18 @@ from .preview_smoke import (
     PreviewSmokeScreenEvidence,
     smoke_preview_host,
 )
+from .desktop_preview_bridge import (
+    DesktopPreviewBridge,
+    DesktopPreviewBridgeConfig,
+    PreviewBridgeError,
+    PreviewHostLaunchConfig,
+    PreviewHostProcessError,
+    PreviewHostStartTimeoutError,
+    PreviewOpenResult,
+    PreviewScreenSelectionError,
+    load_preview_manifest,
+    resolve_preview_host_dir_from_summary,
+)
 from .runtime_wiring import RuntimeWiringContract, build_runtime_wiring_contract
 from .validator import (
     compute_canonical_hash_pair,
@@ -81,6 +93,14 @@ __all__ = [
     "FidelityGeneratedNodeInventory",
     "FidelityPositionStyleCoverageRisk",
     "FidelitySourceNodeInventory",
+    "DesktopPreviewBridge",
+    "DesktopPreviewBridgeConfig",
+    "PreviewBridgeError",
+    "PreviewHostLaunchConfig",
+    "PreviewHostProcessError",
+    "PreviewHostStartTimeoutError",
+    "PreviewOpenResult",
+    "PreviewScreenSelectionError",
     "PrototypeAcceptanceKpiResult",
     "PrototypeAcceptanceReport",
     "PrototypeAcceptanceSummaryEvaluation",
@@ -107,4 +127,6 @@ __all__ = [
     "build_prototype_acceptance_thresholds",
     "generate_prototype_acceptance_report",
     "smoke_preview_host",
+    "load_preview_manifest",
+    "resolve_preview_host_dir_from_summary",
 ]

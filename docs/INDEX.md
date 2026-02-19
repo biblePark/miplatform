@@ -6,6 +6,7 @@
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/TECH_SPEC.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/QA_GATES.md` (R12: Studio/Orchestrator smoke + 운영 시나리오 게이트 포함)
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/ORCHESTRATOR_API.md`
+- `/Users/biblepark/Desktop/works/miflatform-migrator/docs/DESKTOP_PREVIEW_BRIDGE.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/CODE_STYLE.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/WORKTREE_RUNBOOK.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/multi-agent/README.md`
