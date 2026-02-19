@@ -13,6 +13,7 @@ dependencies = []
 [project.scripts]
 mifl-migrator = "migrator.cli:main"
 mifl-migrator-api = "migrator.orchestrator_api:main"
+mifl-migrator-desktop = "migrator.desktop_app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

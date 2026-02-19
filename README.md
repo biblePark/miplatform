@@ -50,6 +50,15 @@ Run tests:
 python3 -m unittest discover -s tests -p 'test_*.py' -v
 ```
 
+Run desktop batch workflow GUI (R13, PySide6 optional dependency):
+
+```bash
+PYTHONPATH=src python3 -m migrator.desktop_app
+```
+
+The desktop GUI is the primary operator path for native file/folder picking and batch planning.
+Use `preview-host` only to inspect generated React preview results.
+
 Run local orchestrator API server:
 
 ```bash

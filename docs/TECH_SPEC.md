@@ -392,3 +392,56 @@ Regression coverage:
 - `migrate-e2e` + `prototype-accept` output query path
 - `run_real_sample_e2e_regression.py` output query path
 - unsupported explicit file failure gate
+
+## 14) Desktop FilePicker + Batch Plan Contract (R13)
+
+Scope:
+
+- Python desktop operator flow is primary (`PySide6`) and uses native file/folder dialogs.
+- Web preview host remains result verification only.
+
+Source selection contract:
+
+- Native source XML file picker
+- Native source folder picker
+- Folder queue resolution options:
+- `recursive` (bool)
+- `glob_pattern` (default `*.xml`)
+
+Output contract:
+
+- Native output root directory picker
+- Deterministic per-run layout rooted at:
+- `<output-root>/desktop-runs/<run_id>/`
+- Plan/summary artifacts:
+- `batch-run-plan.json`
+- `batch-run-summary.json`
+- Per-item deterministic directories:
+- `items/<index>-<stem>-<digest>/e2e`
+- `items/<index>-<stem>-<digest>/generated-api`
+- `items/<index>-<stem>-<digest>/generated-ui`
+- `items/<index>-<stem>-<digest>/preview-host`
+
+Batch plan contract:
+
+- `contract_version` (current `1`)
+- `run_id`
+- `retry_of_run_id` (nullable)
+- `selection`
+- `summary` (`total_items`, `queue_fingerprint`, source resolution metadata)
+- `items[]` with queue index, source XML path, and per-item output layout
+
+Summary view contract:
+
+- Run-level status counters:
+- `queued_count`, `running_count`, `succeeded_count`, `failed_count`, `canceled_count`, `skipped_count`
+- `retryable_failed_count`
+- `items[]` with:
+- `status`, `exit_code`, `summary_file`, `error_message`
+- `is_retry_candidate` (`status == failed`)
+
+Failure-only retry contract:
+
+- Retry plan is generated from failed items only.
+- Retry plan uses `source_mode=explicit_queue` and carries `retry_of_run_id=<previous_run_id>`.
+- Retry layout is generated through the same deterministic per-run layout policy.
