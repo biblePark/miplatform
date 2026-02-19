@@ -52,6 +52,10 @@ class TestUiCodegen(unittest.TestCase):
             self.assertEqual(report.summary.runtime_wired_event_props, 1)
             self.assertEqual(report.summary.unsupported_event_bindings, 0)
             self.assertEqual(report.unsupported_event_inventory, [])
+            self.assertEqual(report.requested_mode, "mui")
+            self.assertEqual(report.mode, "mui")
+            self.assertIn("explicit_mui_mode", report.decision_reason)
+            self.assertGreaterEqual(report.risk_score, 0.0)
 
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("export default function SimpleScreenFixtureScreen", tsx_text)
@@ -71,6 +75,176 @@ class TestUiCodegen(unittest.TestCase):
             )
             self.assertIn('data-mi-action-onclick={"onFnSearch"}', tsx_text)
             self.assertIn("node=/Screen[1]/Contents[1]/Button[1]", tsx_text)
+
+    def test_generate_ui_codegen_artifacts_supports_strict_mode_low_level_render(self) -> None:
+        parsed = parse_xml_file(FIXTURE_XML)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir,
+                mode="strict",
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertEqual(report.requested_mode, "strict")
+            self.assertEqual(report.mode, "strict")
+            self.assertIn("explicit_strict_mode", report.decision_reason)
+            self.assertNotIn('from "@mui/material"', tsx_text)
+            self.assertIn('<div className="mi-widget-shell mi-widget-shell-button"', tsx_text)
+            self.assertIn('<button className="mi-widget mi-widget-button"', tsx_text)
+            self.assertIn('onClick={behaviorStore.onFnSearch}', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_auto_mode_records_risk_decision(self) -> None:
+        screen = ScreenIR(
+            screen_id="Auto Policy High Risk",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "AutoPolicyHighRisk"},
+                text=None,
+                source=SourceRef(file_path="auto-risk.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={"left": "0", "top": "0", "width": "1024", "height": "768"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="auto-risk.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="UnknownWidget",
+                                attributes={
+                                    "id": "unknown1",
+                                    "left": "24",
+                                    "top": "24",
+                                    "width": "140",
+                                    "height": "40",
+                                    "onclick": "fnUnknownOne",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="auto-risk.xml",
+                                    node_path="/Screen[1]/Contents[1]/UnknownWidget[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="UnknownWidget",
+                                attributes={
+                                    "id": "unknown2",
+                                    "left": "24",
+                                    "top": "72",
+                                    "width": "140",
+                                    "height": "40",
+                                    "oncontextmenu": "fnUnknownTwo",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="auto-risk.xml",
+                                    node_path="/Screen[1]/Contents[1]/UnknownWidget[2]",
+                                    line=4,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Tab",
+                                attributes={
+                                    "id": "tabRisk",
+                                    "left": "200",
+                                    "top": "24",
+                                    "width": "400",
+                                    "height": "300",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="auto-risk.xml",
+                                    node_path="/Screen[1]/Contents[1]/Tab[1]",
+                                    line=5,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="TabPage",
+                                        attributes={"id": "pageA", "text": "A"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="auto-risk.xml",
+                                            node_path="/Screen[1]/Contents[1]/Tab[1]/TabPage[1]",
+                                            line=6,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="TabPage",
+                                        attributes={"id": "pageB", "text": "B"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="auto-risk.xml",
+                                            node_path="/Screen[1]/Contents[1]/Tab[1]/TabPage[2]",
+                                            line=7,
+                                        ),
+                                        children=[],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="UnknownWidget",
+                    node_id="unknown1",
+                    event_name="onclick",
+                    handler="fnUnknownOne",
+                    source=SourceRef(
+                        file_path="auto-risk.xml",
+                        node_path="/Screen[1]/Contents[1]/UnknownWidget[1]",
+                        line=3,
+                    ),
+                ),
+                EventIR(
+                    node_tag="UnknownWidget",
+                    node_id="unknown2",
+                    event_name="oncontextmenu",
+                    handler="fnUnknownTwo",
+                    source=SourceRef(
+                        file_path="auto-risk.xml",
+                        node_path="/Screen[1]/Contents[1]/UnknownWidget[2]",
+                        line=4,
+                    ),
+                ),
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="auto-risk.xml",
+                out_dir=out_dir,
+                mode="auto",
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertEqual(report.requested_mode, "auto")
+            self.assertEqual(report.mode, "strict")
+            self.assertIn("auto_selected_strict_high_fidelity_risk", report.decision_reason)
+            self.assertGreaterEqual(report.risk_score, 0.58)
+            self.assertNotIn('from "@mui/material"', tsx_text)
+            self.assertIn("onClick={() => setTabIndex0(0)}", tsx_text)
+            self.assertIn(
+                (
+                    "Unsupported widget tag 'UnknownWidget' at "
+                    "/Screen[1]/Contents[1]/UnknownWidget[1]; rendered as fallback widget."
+                ),
+                report.warnings,
+            )
 
     def test_generate_ui_codegen_artifacts_warns_for_minimal_screen(self) -> None:
         screen = ScreenIR(

@@ -21,6 +21,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - `/docs/PROJECT_RULES.md`: Non-negotiable engineering and migration rules.
 - `/docs/PROJECT_CONTEXT.md`: Domain context, constraints, goals, and assumptions.
 - `/docs/TECH_SPEC.md`: Core architecture and validation design.
+- `/docs/ORCHESTRATOR_API.md`: Local asynchronous API contract for running migration jobs.
 - `/docs/CODE_STYLE.md`: Code and repository style standards.
 - `/docs/WORKTREE_RUNBOOK.md`: Multi-threaded round workflow with `git worktree`.
 - `/docs/multi-agent/README.md`: Templates and workflow for subagent coordination.
@@ -47,6 +48,12 @@ Run tests:
 
 ```bash
 python3 -m unittest discover -s tests -p 'test_*.py' -v
+```
+
+Run local orchestrator API server:
+
+```bash
+PYTHONPATH=src python3 -m migrator.orchestrator_api --host 127.0.0.1 --port 8765 --workspace-root .
 ```
 
 Run strict parse on one XML:

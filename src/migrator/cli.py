@@ -29,6 +29,7 @@ XML_PARSE_FAILURE_PREFIX = "XML parse failure:"
 FAILURE_LEADERBOARD_LIMIT = 10
 MIGRATE_E2E_COMMAND_NAME = "migrate-e2e"
 PROTOTYPE_ACCEPT_COMMAND_NAME = "prototype-accept"
+UI_RENDER_POLICY_MODE_CHOICES = ("strict", "mui", "auto")
 
 
 def _load_known_tags(path: str | None) -> set[str] | None:
@@ -72,6 +73,18 @@ def _add_common_parse_options(command: argparse.ArgumentParser) -> None:
         type=int,
         default=200,
         help="Maximum mismatch details stored in report (default: 200)",
+    )
+
+
+def _add_render_policy_mode_option(command: argparse.ArgumentParser) -> None:
+    command.add_argument(
+        "--render-policy-mode",
+        choices=UI_RENDER_POLICY_MODE_CHOICES,
+        default="mui",
+        help=(
+            "UI render policy mode "
+            "(strict=low-level coordinate fidelity, mui=high-level MUI-first, auto=risk-based)"
+        ),
     )
 
 
@@ -249,6 +262,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Output path for UI codegen report JSON",
     )
     _add_common_parse_options(gen_ui_cmd)
+    _add_render_policy_mode_option(gen_ui_cmd)
     gen_ui_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
     fidelity_audit_cmd = subparsers.add_parser(
@@ -409,6 +423,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Optional explicit output path for generated registry TypeScript module",
     )
     _add_common_parse_options(migrate_e2e_cmd)
+    _add_render_policy_mode_option(migrate_e2e_cmd)
     migrate_e2e_cmd.add_argument("--pretty", action="store_true", help="Pretty-print JSON outputs")
 
     prototype_accept_cmd = subparsers.add_parser(
@@ -585,6 +600,7 @@ def run_gen_ui(args: argparse.Namespace) -> int:
         screen=report.screen,
         input_xml_path=args.xml_path,
         out_dir=args.out_dir,
+        mode=args.render_policy_mode,
     )
     report_out = Path(args.report_out).resolve()
     _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
@@ -814,6 +830,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     screen=parse_report.screen,
                     input_xml_path=str(xml_path),
                     out_dir=args.ui_out_dir,
+                    mode=args.render_policy_mode,
                 )
             except Exception as exc:  # pragma: no cover - defensive path
                 error_message = f"{type(exc).__name__}: {exc}"
@@ -846,6 +863,10 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     "total_event_attributes": ui_report.summary.total_event_attributes,
                     "runtime_wired_event_props": ui_report.summary.runtime_wired_event_props,
                     "unsupported_event_bindings": ui_report.summary.unsupported_event_bindings,
+                    "requested_mode": ui_report.requested_mode,
+                    "mode": ui_report.mode,
+                    "decision_reason": ui_report.decision_reason,
+                    "risk_score": ui_report.risk_score,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
 

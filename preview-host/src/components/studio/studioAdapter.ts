@@ -58,10 +58,19 @@ export interface StudioAdapter {
   ): Promise<StudioRunResult>;
 }
 
-const API_START_PATH = "/api/studio/migrations";
+const ORCHESTRATOR_CREATE_PATH = "/jobs";
+const LEGACY_API_START_PATH = "/api/studio/migrations";
 const API_POLL_INTERVAL_MS = 900;
 const API_MAX_POLLS = 200;
 const GLOBAL_API_BASE_KEY = "__MIFL_STUDIO_API_BASE_URL__";
+const ORCHESTRATOR_STAGE_ORDER = [
+  "parse",
+  "map_api",
+  "gen_ui",
+  "fidelity_audit",
+  "sync_preview",
+  "preview_smoke",
+] as const;
 
 class StudioAdapterError extends Error {
   readonly recoverable: boolean;
@@ -152,12 +161,19 @@ function toApiLogs(value: unknown): ApiLogPayload[] {
       if (!message) {
         return null;
       }
-      const seq = typeof entry.seq === "number" && Number.isFinite(entry.seq) ? entry.seq : null;
+      const sequenceCandidate = entry.seq ?? entry.sequence;
+      const seq =
+        typeof sequenceCandidate === "number" && Number.isFinite(sequenceCandidate)
+          ? sequenceCandidate
+          : null;
       return {
         seq,
         level: toLogLevel(entry.level),
         message,
-        timestamp: toStringOrNull(entry.timestamp) ?? new Date().toISOString(),
+        timestamp:
+          toStringOrNull(entry.timestamp) ??
+          toStringOrNull(entry.timestamp_utc) ??
+          new Date().toISOString(),
         fallbackIndex: index,
       };
     })
@@ -274,10 +290,10 @@ function isRecoverableStatus(status: number): boolean {
 }
 
 function statusToRunState(status: string | null): StudioRunState {
-  if (status === "completed" || status === "success") {
+  if (status === "completed" || status === "success" || status === "succeeded") {
     return "completed";
   }
-  if (status === "failed" || status === "failure") {
+  if (status === "failed" || status === "failure" || status === "canceled") {
     return "failed";
   }
   if (status === "running" || status === "queued" || status === "pending") {
@@ -395,10 +411,15 @@ async function requestJson(
   const payload = rawText.trim().length === 0 ? null : safeJsonParse(rawText);
 
   if (!response.ok) {
+    const errorMessage =
+      isRecord(payload) && isRecord(payload.error) && typeof payload.error.message === "string"
+        ? payload.error.message
+        : null;
     const message =
-      isRecord(payload) && typeof payload.message === "string"
-        ? payload.message
-        : `Studio API request failed with status ${response.status}.`;
+      errorMessage ??
+      (isRecord(payload) && typeof payload.message === "string" ? payload.message : null) ??
+      (isRecord(payload) && typeof payload.error === "string" ? payload.error : null) ??
+      `Studio API request failed with status ${response.status}.`;
     throw new StudioAdapterError(message, isRecoverableStatus(response.status));
   }
 
@@ -416,6 +437,325 @@ function safeJsonParse(text: string): unknown {
   }
 }
 
+function createOrchestratorJobRequest(config: StudioRunConfig): Record<string, unknown> {
+  const outDir = config.outputPath.replace(/\/$/, "");
+  return {
+    xml_path: config.sourceXmlPath,
+    out_dir: outDir,
+    api_out_dir: `${outDir}/generated/api`,
+    ui_out_dir: `${outDir}/generated/frontend`,
+    preview_host_source_dir: config.previewHostPath,
+    use_isolated_preview_host: true,
+    render_policy_mode: config.renderMode,
+    pretty: true,
+  };
+}
+
+interface OrchestratorJobPayload {
+  id: string;
+  status: string;
+  result: Record<string, unknown> | null;
+  error: Record<string, unknown> | null;
+}
+
+function toOrchestratorJobPayload(value: unknown): OrchestratorJobPayload {
+  const container = isRecord(value) && isRecord(value.job) ? value.job : value;
+  if (!isRecord(container)) {
+    throw new StudioAdapterError("Orchestrator API job payload is malformed.", true);
+  }
+
+  const id = toStringOrNull(container.id);
+  const status = toStringOrNull(container.status);
+  if (!id || !status) {
+    throw new StudioAdapterError("Orchestrator API job payload is missing id/status.", true);
+  }
+
+  return {
+    id,
+    status,
+    result: isRecord(container.result) ? container.result : null,
+    error: isRecord(container.error) ? container.error : null,
+  };
+}
+
+function toOrchestratorStatusMessage(job: OrchestratorJobPayload): string {
+  if (job.status === "queued") {
+    return "Job queued.";
+  }
+  if (job.status === "running") {
+    return "Pipeline running.";
+  }
+  if (job.status === "succeeded") {
+    return "Pipeline completed successfully.";
+  }
+  if (job.status === "canceled") {
+    return "Pipeline canceled.";
+  }
+  if (job.status === "failed") {
+    const errorMessage =
+      toStringOrNull(job.error?.message) ??
+      toStringOrNull(job.error?.code) ??
+      "Pipeline failed.";
+    return errorMessage;
+  }
+  return `Job status: ${job.status}`;
+}
+
+function toOrchestratorStageSummaries(value: unknown): StudioStageSummary[] {
+  if (!isRecord(value)) {
+    return [];
+  }
+
+  const entries = Object.entries(value).map(([stageKey, raw]) => {
+    if (!isRecord(raw)) {
+      return {
+        stage: stageKey.replace(/_/g, "-"),
+        status: "success" as StudioStageSummary["status"],
+        warnings: 0,
+        errors: 0,
+      };
+    }
+    const warningCountCandidate = raw.warning_count ?? raw.warnings;
+    const errorCountCandidate = raw.error_count ?? raw.errors;
+    const warningCount = Array.isArray(warningCountCandidate)
+      ? warningCountCandidate.length
+      : toNumber(warningCountCandidate);
+    const errorCount = Array.isArray(errorCountCandidate)
+      ? errorCountCandidate.length
+      : toNumber(errorCountCandidate);
+
+    return {
+      stage: stageKey.replace(/_/g, "-"),
+      status: toStageStatus(raw.status),
+      warnings: warningCount,
+      errors: errorCount,
+    };
+  });
+
+  const stageOrder = new Map<string, number>(
+    ORCHESTRATOR_STAGE_ORDER.map((stage, index) => [stage.replace(/_/g, "-"), index]),
+  );
+
+  return entries.sort((left, right) => {
+    const leftOrder = stageOrder.get(left.stage);
+    const rightOrder = stageOrder.get(right.stage);
+    if (leftOrder !== undefined && rightOrder !== undefined) {
+      return leftOrder - rightOrder;
+    }
+    if (leftOrder !== undefined) {
+      return -1;
+    }
+    if (rightOrder !== undefined) {
+      return 1;
+    }
+    return left.stage.localeCompare(right.stage);
+  });
+}
+
+function createOrchestratorMarkdownBody(
+  config: StudioRunConfig,
+  report: StudioRunReport,
+): string {
+  const stageLines = report.stageSummaries
+    .map(
+      (stage) =>
+        `- ${stage.stage}: ${stage.status} (warnings=${stage.warnings}, errors=${stage.errors})`,
+    )
+    .join("\n");
+
+  return [
+    "# Migration Studio Report",
+    "",
+    `- run_id: ${report.runId}`,
+    `- verdict: ${report.verdict}`,
+    `- source_xml: ${config.sourceXmlPath}`,
+    `- output_path: ${config.outputPath}`,
+    `- preview_host_path: ${config.previewHostPath}`,
+    `- render_mode: ${config.renderMode}`,
+    `- duration_ms: ${report.durationMs}`,
+    "",
+    "## Stage Summary",
+    stageLines || "- (none)",
+  ].join("\n");
+}
+
+function createOrchestratorJsonBody(report: StudioRunReport): string {
+  return JSON.stringify(
+    {
+      runId: report.runId,
+      verdict: report.verdict,
+      summaryMessage: report.summaryMessage,
+      durationMs: report.durationMs,
+      stageSummaries: report.stageSummaries,
+    },
+    null,
+    2,
+  );
+}
+
+function toOrchestratorReport({
+  config,
+  job,
+  artifactsPayload,
+  durationMs,
+}: {
+  config: StudioRunConfig;
+  job: OrchestratorJobPayload;
+  artifactsPayload: unknown;
+  durationMs: number;
+}): StudioRunReport {
+  if (!isRecord(artifactsPayload)) {
+    throw new StudioAdapterError("Orchestrator artifacts payload is malformed.");
+  }
+
+  const artifacts = isRecord(artifactsPayload.artifacts) ? artifactsPayload.artifacts : {};
+  const reports = isRecord(artifacts.reports) ? artifacts.reports : {};
+  const stages = artifacts.stages;
+  const errors = Array.isArray(artifacts.errors)
+    ? artifacts.errors.filter((entry): entry is string => typeof entry === "string")
+    : [];
+
+  const verdict: StudioRunReport["verdict"] =
+    job.status === "succeeded" && toStringOrNull(artifacts.overall_status) === "success"
+      ? "success"
+      : "failure";
+  const summaryMessage =
+    verdict === "success"
+      ? "Migration run finished successfully."
+      : errors.length > 0
+        ? `Migration run finished with failures: ${errors[0]}`
+        : "Migration run finished with failures.";
+
+  const report: StudioRunReport = {
+    runId: job.id,
+    verdict,
+    summaryMessage,
+    durationMs,
+    stageSummaries: toOrchestratorStageSummaries(stages),
+    markdownReport: {
+      body: "",
+    },
+    jsonReport: {
+      path: toStringOrNull(reports.consolidated_summary) ?? undefined,
+      body: "",
+    },
+  };
+
+  report.markdownReport = {
+    path:
+      toStringOrNull(reports.consolidated_summary_markdown) ??
+      toStringOrNull(reports.summary_markdown) ??
+      undefined,
+    body: createOrchestratorMarkdownBody(config, report),
+  };
+  report.jsonReport = {
+    path: report.jsonReport.path,
+    body: createOrchestratorJsonBody(report),
+  };
+
+  return report;
+}
+
+class OrchestratorJobsAdapter implements StudioAdapter {
+  readonly name = "orchestrator-jobs-api";
+
+  async run(
+    config: StudioRunConfig,
+    callbacks: StudioRunCallbacks,
+    signal: AbortSignal,
+  ): Promise<StudioRunResult> {
+    const startedAt = Date.now();
+    callbacks.onStatus("running", "Orchestrator API 실행 요청을 전송했습니다.");
+
+    const startResponse = await requestJson(
+      buildApiUrl(ORCHESTRATOR_CREATE_PATH),
+      {
+        method: "POST",
+        body: JSON.stringify(createOrchestratorJobRequest(config)),
+      },
+      signal,
+    );
+    const createdJob = toOrchestratorJobPayload(startResponse.payload);
+    callbacks.onStatus(statusToRunState(createdJob.status), toOrchestratorStatusMessage(createdJob));
+
+    const emittedLogKeys = new Set<string>();
+    const emitLogBatch = (logs: ApiLogPayload[]) => {
+      logs.forEach((log, index) => {
+        const key =
+          log.seq !== null
+            ? `seq:${log.seq}`
+            : `fallback:${index}:${log.timestamp}:${log.level}:${log.message}`;
+        if (emittedLogKeys.has(key)) {
+          return;
+        }
+        emittedLogKeys.add(key);
+        callbacks.onLog({
+          level: log.level,
+          message: log.message,
+          timestamp: log.timestamp,
+        });
+      });
+    };
+
+    const fetchAndEmitLogs = async () => {
+      const logResponse = await requestJson(
+        buildApiUrl(`/jobs/${encodeURIComponent(createdJob.id)}/logs`),
+        { method: "GET" },
+        signal,
+      );
+      const logPayload = isRecord(logResponse.payload) ? logResponse.payload.logs : null;
+      emitLogBatch(toApiLogs(logPayload));
+    };
+
+    for (let pollAttempt = 0; pollAttempt < API_MAX_POLLS; pollAttempt += 1) {
+      if (pollAttempt > 0) {
+        await sleep(API_POLL_INTERVAL_MS, signal);
+      }
+
+      const [jobResponse] = await Promise.all([
+        requestJson(
+          buildApiUrl(`/jobs/${encodeURIComponent(createdJob.id)}`),
+          {
+            method: "GET",
+          },
+          signal,
+        ),
+        fetchAndEmitLogs(),
+      ]);
+
+      const job = toOrchestratorJobPayload(jobResponse.payload);
+      callbacks.onStatus(statusToRunState(job.status), toOrchestratorStatusMessage(job));
+
+      if (job.status === "succeeded" || job.status === "failed" || job.status === "canceled") {
+        const artifactsResponse = await requestJson(
+          buildApiUrl(`/jobs/${encodeURIComponent(createdJob.id)}/artifacts`),
+          { method: "GET" },
+          signal,
+        );
+        const report = toOrchestratorReport({
+          config,
+          job,
+          artifactsPayload: artifactsResponse.payload,
+          durationMs: Date.now() - startedAt,
+        });
+        callbacks.onReport(report);
+        const finalState: StudioRunResult["finalState"] =
+          report.verdict === "success" ? "completed" : "failed";
+        callbacks.onStatus(finalState, report.summaryMessage);
+        return {
+          finalState,
+          adapterName: this.name,
+          report,
+        };
+      }
+    }
+
+    throw new StudioAdapterError(
+      `Orchestrator API 상태 조회가 시간 제한(${API_MAX_POLLS}회) 내에 완료되지 않았습니다.`,
+    );
+  }
+}
+
 class HttpStudioAdapter implements StudioAdapter {
   readonly name = "studio-api";
 
@@ -427,7 +767,7 @@ class HttpStudioAdapter implements StudioAdapter {
     callbacks.onStatus("running", "Studio API 실행 요청을 전송했습니다.");
 
     const startResponse = await requestJson(
-      buildApiUrl(API_START_PATH),
+      buildApiUrl(LEGACY_API_START_PATH),
       {
         method: "POST",
         body: JSON.stringify(createRequestBody(config)),
@@ -476,7 +816,8 @@ class HttpStudioAdapter implements StudioAdapter {
       throw new StudioAdapterError("Studio API 응답에 runId가 없어 상태 조회를 진행할 수 없습니다.");
     }
 
-    const pollUrl = initialStatus.statusUrl ?? `${API_START_PATH}/${encodeURIComponent(runId)}`;
+    const pollUrl =
+      initialStatus.statusUrl ?? `${LEGACY_API_START_PATH}/${encodeURIComponent(runId)}`;
 
     for (let pollAttempt = 0; pollAttempt < API_MAX_POLLS; pollAttempt += 1) {
       await sleep(API_POLL_INTERVAL_MS, signal);
@@ -721,7 +1062,10 @@ class FallbackStudioAdapter implements StudioAdapter {
 }
 
 export function createStudioAdapter(): StudioAdapter {
-  return new FallbackStudioAdapter(new HttpStudioAdapter(), new MockStudioAdapter());
+  return new FallbackStudioAdapter(
+    new OrchestratorJobsAdapter(),
+    new FallbackStudioAdapter(new HttpStudioAdapter(), new MockStudioAdapter()),
+  );
 }
 
 export function isStudioAbortError(error: unknown): boolean {

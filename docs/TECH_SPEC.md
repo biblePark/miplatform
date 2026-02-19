@@ -303,3 +303,81 @@ Generation behavior update:
 - container-like tags: `window`, `form`, `div`, `shape`, `tab`, `tabpage`
 - widget-like tags: `textarea`, `maskedit`, `image`, `radio`, `checkbox`, `calendar`, `spin`, `treeview`, `webbrowser`, `msie`, `rexpert`
 - non-visual meta tags (`dataset`, `colinfo`, `cell`, `script`, etc.) are emitted as traceable shell nodes without unsupported-widget warnings.
+
+## 13) Report Query/Display Contract (R11)
+
+Scope:
+
+- `scripts/report_view.py` provides a single query UX for major report artifacts:
+- `*.migration-summary.json` (`migration_summary`)
+- `regression-summary.json` (`regression_summary`)
+- `prototype-acceptance.json` (`prototype_acceptance`)
+
+Input contract:
+
+- Accepts one or more file paths and/or directory paths.
+- Directory paths are scanned recursively for `*.json`.
+- Report type can be forced via `--report-type` or auto-detected via payload shape (`--report-type auto`, default).
+
+Auto-detection rules:
+
+- `prototype_acceptance`: payload contains `verdict` (string) and `kpi_results` (list)
+- `regression_summary`: payload contains `risk_trends` (object) and `stage_status_counts` (object)
+- `migration_summary`: payload contains `stages` (object)
+
+Output contract (`--format json`):
+
+- Root fields:
+- `schema_version` (`1`)
+- `report_count`
+- `reports[]`
+- `reports[]` fields:
+- `schema_version` (`1`)
+- `source_file` (absolute path)
+- `report_type` (`migration_summary|regression_summary|prototype_acceptance`)
+- `generated_at_utc` (nullable string)
+- `summary` (normalized per-type key metrics)
+
+Per-type normalized summary fields:
+
+- `migration_summary`:
+- `screen_id`, `overall_status`, `overall_exit_code`
+- `stage_statuses`
+- `warning_count`, `error_count`
+- `fidelity_risk_detected`, `missing_node_count`, `position_style_nodes_with_risk`
+- `unsupported_event_bindings`, `event_runtime_wiring_coverage_ratio`
+- `regression_summary`:
+- `overall_status`, `overall_exit_code`
+- `total_samples`, `success_count`, `failure_count`
+- `stage_failure_counts`
+- `malformed_xml_blocker_count`
+- `risk_trends.extraction|mapping|fidelity` rollup fields
+- `prototype_acceptance`:
+- `verdict`
+- `total_migration_summaries`, `failed_migration_count`, `fidelity_risk_count`
+- `unsupported_event_bindings`, `unresolved_transaction_adapter_signals`
+- `event_runtime_wiring_coverage_ratio`
+- `total_kpi_count`, `passed_kpi_count`, `failed_kpi_count`, `failed_kpi_names`
+
+Text output contract (`--format text`, default):
+
+- One report block per artifact.
+- Each block starts with `[<report_type>] <source_file>`.
+- Followed by deterministic key metric lines for terminal scanability.
+
+Failure/exit contract:
+
+- Returns `0` on success.
+- Returns `2` when:
+- input path is missing
+- explicit file input is not a supported report contract
+- JSON parsing fails or required report fields are malformed
+- no supported reports are found
+- For directory inputs in auto mode, unsupported JSON payloads are skipped and counted on stderr.
+
+Regression coverage:
+
+- `tests/test_report_view.py` validates:
+- `migrate-e2e` + `prototype-accept` output query path
+- `run_real_sample_e2e_regression.py` output query path
+- unsupported explicit file failure gate

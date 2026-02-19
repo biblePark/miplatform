@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 import json
 from pathlib import Path
 import re
-from typing import Any
+from typing import Any, Literal
 
 from .behavior_store_codegen import (
     BehaviorEventActionBinding,
@@ -190,6 +190,11 @@ _TEXT_ALIGN_ALIASES = {
     "centre": "center",
     "middle": "center",
 }
+_RENDER_POLICY_MODES = frozenset({"strict", "mui", "auto"})
+_AUTO_RENDER_POLICY_RISK_THRESHOLD = 0.58
+
+UiRenderPolicyMode = Literal["strict", "mui", "auto"]
+UiRenderMode = Literal["strict", "mui"]
 
 
 @dataclass(slots=True)
@@ -225,6 +230,10 @@ class UiCodegenReport:
     behavior_actions_file: str
     wiring_contract: RuntimeWiringContract
     summary: UiCodegenSummary
+    requested_mode: UiRenderPolicyMode
+    mode: UiRenderMode
+    decision_reason: str
+    risk_score: float
     unsupported_event_inventory: list[UnsupportedUiEventBinding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -251,6 +260,23 @@ class _TabBinding:
     state_var: str
     set_state_var: str
     page_entries: list[_TabPageEntry] = field(default_factory=list)
+
+
+@dataclass(slots=True)
+class _RenderRiskSignals:
+    total_nodes: int = 0
+    positioned_nodes: int = 0
+    fallback_nodes: int = 0
+    tab_nodes: int = 0
+    event_attributes: int = 0
+
+
+@dataclass(slots=True)
+class _RenderPolicyDecision:
+    requested_mode: UiRenderPolicyMode
+    resolved_mode: UiRenderMode
+    decision_reason: str
+    risk_score: float
 
 
 def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
@@ -733,6 +759,112 @@ def _should_ignore_fallback_node(node: AstNode) -> bool:
     return "/record[" in path_lower or "/data[" in path_lower or "/cd[" in path_lower
 
 
+def _normalize_render_policy_mode(mode: str) -> UiRenderPolicyMode:
+    token = mode.strip().lower()
+    if token == "strict":
+        return "strict"
+    if token == "mui":
+        return "mui"
+    if token == "auto":
+        return "auto"
+    raise ValueError(
+        f"Unsupported render policy mode '{mode}'. Expected one of: {sorted(_RENDER_POLICY_MODES)}"
+    )
+
+
+def _collect_render_risk_signals(node: AstNode) -> _RenderRiskSignals:
+    signals = _RenderRiskSignals()
+
+    def walk(current: AstNode) -> None:
+        signals.total_nodes += 1
+        lower_attr_names = {name.lower() for name in current.attributes}
+        if lower_attr_names.intersection({"left", "top", "right", "bottom"}):
+            signals.positioned_nodes += 1
+
+        widget_kind = _widget_kind(current.tag)
+        if widget_kind == "fallback" and not _should_ignore_fallback_node(current):
+            signals.fallback_nodes += 1
+
+        if current.tag.lower() in {"tab", "tabpage"}:
+            signals.tab_nodes += 1
+
+        signals.event_attributes += sum(
+            1
+            for attr_name in lower_attr_names
+            if attr_name.startswith("on") and len(attr_name) > 2
+        )
+        for child in current.children:
+            walk(child)
+
+    walk(node)
+    return signals
+
+
+def _compute_render_risk_score(signals: _RenderRiskSignals) -> float:
+    if signals.total_nodes <= 0:
+        return 0.0
+    position_ratio = signals.positioned_nodes / signals.total_nodes
+    fallback_ratio = signals.fallback_nodes / signals.total_nodes
+    event_density = signals.event_attributes / signals.total_nodes
+    tab_presence = 1.0 if signals.tab_nodes > 0 else 0.0
+    raw_score = (
+        (min(1.0, position_ratio) * 0.4)
+        + (min(1.0, fallback_ratio * 4.0) * 0.4)
+        + (min(1.0, event_density / 2.0) * 0.1)
+        + (tab_presence * 0.1)
+    )
+    return round(min(1.0, raw_score), 4)
+
+
+def _resolve_render_policy(
+    *,
+    screen: ScreenIR,
+    requested_mode: str,
+) -> _RenderPolicyDecision:
+    normalized_mode = _normalize_render_policy_mode(requested_mode)
+    signals = _collect_render_risk_signals(screen.root)
+    risk_score = _compute_render_risk_score(signals)
+    signal_snapshot = (
+        f"risk={risk_score:.4f}; positioned_nodes={signals.positioned_nodes}/{signals.total_nodes}; "
+        f"fallback_nodes={signals.fallback_nodes}; tab_nodes={signals.tab_nodes}; "
+        f"event_attrs={signals.event_attributes}"
+    )
+
+    if normalized_mode == "strict":
+        return _RenderPolicyDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="strict",
+            decision_reason=f"explicit_strict_mode ({signal_snapshot})",
+            risk_score=risk_score,
+        )
+    if normalized_mode == "mui":
+        return _RenderPolicyDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="mui",
+            decision_reason=f"explicit_mui_mode ({signal_snapshot})",
+            risk_score=risk_score,
+        )
+    if risk_score >= _AUTO_RENDER_POLICY_RISK_THRESHOLD:
+        return _RenderPolicyDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="strict",
+            decision_reason=(
+                "auto_selected_strict_high_fidelity_risk "
+                f"({signal_snapshot}; threshold={_AUTO_RENDER_POLICY_RISK_THRESHOLD:.2f})"
+            ),
+            risk_score=risk_score,
+        )
+    return _RenderPolicyDecision(
+        requested_mode=normalized_mode,
+        resolved_mode="mui",
+        decision_reason=(
+            "auto_selected_mui_low_fidelity_risk "
+            f"({signal_snapshot}; threshold={_AUTO_RENDER_POLICY_RISK_THRESHOLD:.2f})"
+        ),
+        risk_score=risk_score,
+    )
+
+
 def _trace_attributes(node: AstNode) -> list[str]:
     attrs = [
         f"data-mi-tag={_to_jsx_string(node.tag)}",
@@ -841,7 +973,7 @@ def _record_unsupported_event_warning(
     )
 
 
-def _render_widget_body(
+def _render_widget_body_mui(
     node: AstNode,
     *,
     widget_kind: str,
@@ -1120,6 +1252,274 @@ def _render_widget_body(
     ]
 
 
+def _render_widget_body_strict(
+    node: AstNode,
+    *,
+    widget_kind: str,
+    depth: int,
+    tab_binding_lookup: dict[str, _TabBinding],
+) -> list[str]:
+    indent = "  " * depth
+    content_style = _style_attribute(_widget_content_style(widget_kind))
+
+    if widget_kind == "container" and node.tag.lower() == "tab":
+        tab_binding = tab_binding_lookup.get(node.source.node_path)
+        if tab_binding is None or not tab_binding.page_entries:
+            return []
+        lines = [f'{indent}<div className="mi-widget mi-widget-tab-nav">']
+        for index, page_entry in enumerate(tab_binding.page_entries):
+            lines.append(
+                (
+                    f'{indent}  <button type="button" '
+                    f"onClick={{() => {tab_binding.set_state_var}({index})}} "
+                    f"data-mi-tab-selected={{{tab_binding.state_var} === {index}}}>"
+                    f"{_to_jsx_string(page_entry.label)}</button>"
+                )
+            )
+        lines.append(f"{indent}</div>")
+        return lines
+
+    if widget_kind in {"container", "ignored"}:
+        return []
+
+    if widget_kind == "button":
+        label = _node_display_text(node, fallback="Button")
+        return [
+            (
+                f'{indent}<button className="mi-widget mi-widget-button" '
+                f'type="button"{content_style}>{_to_jsx_string(label)}</button>'
+            )
+        ]
+
+    if widget_kind == "edit":
+        label = _node_display_text(node, fallback="Edit")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        return [
+            (
+                f'{indent}<input className="mi-widget mi-widget-edit" type="text" '
+                f"aria-label={_to_jsx_string(label)}{content_style} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "textarea":
+        label = _node_display_text(node, fallback="TextArea")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        rows = _attr_lookup(node.attributes, "rows")
+        min_rows = 3
+        if rows is not None:
+            rows_token = rows.strip()
+            if rows_token.isdigit():
+                min_rows = max(1, int(rows_token))
+        return [
+            (
+                f'{indent}<textarea className="mi-widget mi-widget-textarea" '
+                f"aria-label={_to_jsx_string(label)} rows={{{min_rows}}}{content_style} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "maskedit":
+        label = _node_display_text(node, fallback="MaskEdit")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        mask = _attr_lookup(node.attributes, "mask") or _attr_lookup(node.attributes, "format")
+        placeholder_segment = (
+            f" placeholder={_to_jsx_string(mask.strip())}"
+            if mask is not None and mask.strip()
+            else ""
+        )
+        return [
+            (
+                f'{indent}<input className="mi-widget mi-widget-maskedit" type="text" '
+                f"aria-label={_to_jsx_string(label)}{content_style}{placeholder_segment} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "static":
+        value = _node_display_text(node, fallback="Static")
+        return [
+            (
+                f'{indent}<span className="mi-widget mi-widget-static"'
+                f'{content_style}>{_to_jsx_string(value)}</span>'
+            )
+        ]
+
+    if widget_kind == "combo":
+        label = _node_display_text(node, fallback="Combo")
+        placeholder = f"Select {label}"
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        return [
+            (
+                f'{indent}<select className="mi-widget mi-widget-combo" '
+                f"aria-label={_to_jsx_string(label)}{content_style} "
+                f"defaultValue={_to_jsx_string(default_value)}>"
+            ),
+            f'{indent}  <option value="">{_to_jsx_string(placeholder)}</option>',
+            f"{indent}</select>",
+        ]
+
+    if widget_kind == "image":
+        alt_text = _node_display_text(node, fallback="Image")
+        src = (
+            _attr_lookup(node.attributes, "src")
+            or _attr_lookup(node.attributes, "url")
+            or _attr_lookup(node.attributes, "image")
+            or ""
+        )
+        src_segment = f" src={_to_jsx_string(src.strip())}" if src.strip() else ""
+        return [
+            (
+                f'{indent}<img className="mi-widget mi-widget-image"'
+                f"{content_style}{src_segment} alt={_to_jsx_string(alt_text)} loading=\"lazy\" />"
+            )
+        ]
+
+    if widget_kind == "radio":
+        label = _node_display_text(node, fallback="Radio")
+        option_label = _attr_lookup(node.attributes, "itemtext") or "Option"
+        radio_name = _to_css_token(_attr_lookup(node.attributes, "id") or node.source.node_path)
+        default_checked = _normalize_boolean(
+            _attr_lookup(node.attributes, "value") or _attr_lookup(node.attributes, "checked")
+        )
+        checked_literal = "true" if default_checked else "false"
+        return [
+            (
+                f'{indent}<label className="mi-widget mi-widget-radio" '
+                f'aria-label={_to_jsx_string(label)}{content_style}>'
+            ),
+            (
+                f'{indent}  <input type="radio" name={_to_jsx_string(radio_name)} '
+                f"defaultChecked={{{checked_literal}}} />"
+            ),
+            f"{indent}  <span>{_to_jsx_string(option_label)}</span>",
+            f"{indent}</label>",
+        ]
+
+    if widget_kind == "checkbox":
+        label = _node_display_text(node, fallback="Checkbox")
+        default_checked = _normalize_boolean(
+            _attr_lookup(node.attributes, "value") or _attr_lookup(node.attributes, "checked")
+        )
+        checked_literal = "true" if default_checked else "false"
+        return [
+            f'{indent}<label className="mi-widget mi-widget-checkbox"{content_style}>',
+            f'{indent}  <input type="checkbox" defaultChecked={{{checked_literal}}} />',
+            f"{indent}  <span>{_to_jsx_string(label)}</span>",
+            f"{indent}</label>",
+        ]
+
+    if widget_kind == "calendar":
+        label = _node_display_text(node, fallback="Calendar")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        return [
+            (
+                f'{indent}<input className="mi-widget mi-widget-calendar" type="date" '
+                f"aria-label={_to_jsx_string(label)}{content_style} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "spin":
+        label = _node_display_text(node, fallback="Spin")
+        default_value = _attr_lookup(node.attributes, "value") or ""
+        return [
+            (
+                f'{indent}<input className="mi-widget mi-widget-spin" type="number" '
+                f"aria-label={_to_jsx_string(label)}{content_style} step={1} "
+                f"defaultValue={_to_jsx_string(default_value)} />"
+            )
+        ]
+
+    if widget_kind == "treeview":
+        label = _node_display_text(node, fallback="TreeView")
+        return [
+            (
+                f'{indent}<span className="mi-widget mi-widget-treeview"'
+                f'{content_style}>{_to_jsx_string(f"TreeView: {label}")}</span>'
+            )
+        ]
+
+    if widget_kind == "webbrowser":
+        title = _node_display_text(node, fallback="WebBrowser")
+        src = _attr_lookup(node.attributes, "url") or _attr_lookup(node.attributes, "src") or ""
+        src_segment = f" src={_to_jsx_string(src.strip())}" if src.strip() else ""
+        return [
+            (
+                f'{indent}<iframe className="mi-widget mi-widget-webbrowser"'
+                f"{content_style}{src_segment} title={_to_jsx_string(title)} loading=\"lazy\" />"
+            )
+        ]
+
+    if widget_kind == "grid":
+        grid_title = _node_display_text(node, fallback="Grid")
+        bind_dataset = _attr_lookup(node.attributes, "binddataset")
+        header_text = (
+            f"{grid_title} ({bind_dataset})"
+            if bind_dataset is not None and bind_dataset.strip()
+            else grid_title
+        )
+        column_labels = _grid_column_labels(node, fallback=header_text)
+        lines = [
+            f'{indent}<div className="mi-widget mi-widget-grid"{content_style}>',
+            f"{indent}  <table aria-label={_to_jsx_string(grid_title)}>",
+            f"{indent}    <thead>",
+            f"{indent}      <tr>",
+        ]
+        for label in column_labels:
+            lines.append(f"{indent}        <th>{_to_jsx_string(label)}</th>")
+        lines.extend(
+            [
+                f"{indent}      </tr>",
+                f"{indent}    </thead>",
+                f"{indent}    <tbody>",
+                f"{indent}      <tr>",
+            ]
+        )
+        for index, _label in enumerate(column_labels):
+            placeholder = "Generated grid placeholder" if index == 0 else ""
+            lines.append(f"{indent}        <td>{_to_jsx_string(placeholder)}</td>")
+        lines.extend(
+            [
+                f"{indent}      </tr>",
+                f"{indent}    </tbody>",
+                f"{indent}  </table>",
+                f"{indent}</div>",
+            ]
+        )
+        return lines
+
+    return [
+        (
+            f'{indent}<span className="mi-widget mi-widget-fallback"'
+            f'{content_style}>{_to_jsx_string(f"Unsupported tag: {node.tag}")}</span>'
+        )
+    ]
+
+
+def _render_widget_body(
+    node: AstNode,
+    *,
+    widget_kind: str,
+    depth: int,
+    tab_binding_lookup: dict[str, _TabBinding],
+    render_mode: UiRenderMode,
+) -> list[str]:
+    if render_mode == "strict":
+        return _render_widget_body_strict(
+            node,
+            widget_kind=widget_kind,
+            depth=depth,
+            tab_binding_lookup=tab_binding_lookup,
+        )
+    return _render_widget_body_mui(
+        node,
+        widget_kind=widget_kind,
+        depth=depth,
+        tab_binding_lookup=tab_binding_lookup,
+    )
+
+
 def _render_node(
     node: AstNode,
     *,
@@ -1131,6 +1531,7 @@ def _render_node(
     behavior_store_var: str,
     tab_binding_lookup: dict[str, _TabBinding],
     tab_page_lookup: dict[str, tuple[_TabBinding, int]],
+    render_mode: UiRenderMode,
     is_root: bool = False,
 ) -> list[str]:
     block_indent = "  " * depth
@@ -1233,11 +1634,12 @@ def _render_node(
     trace_payload = " ".join(trace_attrs)
     event_payload = " ".join(event_props)
     event_segment = f" {event_payload}" if event_payload else ""
+    shell_tag = "div" if render_mode == "strict" else "Box"
 
     node_lines = [
         f"{indent}{{/* {_source_comment(node.source)} */}}",
         (
-            f'{indent}<Box className="mi-widget-shell mi-widget-shell-{class_token}" '
+            f'{indent}<{shell_tag} className="mi-widget-shell mi-widget-shell-{class_token}" '
             f"data-mi-widget={_to_jsx_string(widget_kind)} "
             f"{trace_payload}{event_segment}{style_attr}>"
         ),
@@ -1249,6 +1651,7 @@ def _render_node(
             widget_kind=widget_kind,
             depth=node_depth + 1,
             tab_binding_lookup=tab_binding_lookup,
+            render_mode=render_mode,
         )
     )
     for child in node.children:
@@ -1263,9 +1666,10 @@ def _render_node(
                 behavior_store_var=behavior_store_var,
                 tab_binding_lookup=tab_binding_lookup,
                 tab_page_lookup=tab_page_lookup,
+                render_mode=render_mode,
             )
         )
-    node_lines.append(f"{indent}</Box>")
+    node_lines.append(f"{indent}</{shell_tag}>")
     return [*conditional_prefix, *node_lines, *conditional_suffix]
 
 
@@ -1284,6 +1688,7 @@ def _render_screen_component(
     unsupported_event_inventory: list[UnsupportedUiEventBinding],
     event_wiring_stats: _EventWiringStats,
     event_action_lookup: dict[tuple[str, str, str], str],
+    render_mode: UiRenderMode,
 ) -> str:
     root = screen.root
     tab_bindings, tab_binding_lookup, tab_page_lookup = _collect_tab_bindings(root)
@@ -1295,19 +1700,27 @@ def _render_screen_component(
         if tab_bindings
         else 'import type { JSX } from "react";'
     )
-    mui_import_tokens = [
-        "Box",
-        "Table",
-        "TableBody",
-        "TableCell",
-        "TableContainer",
-        "TableHead",
-        "TableRow",
-        "Typography",
-    ]
-    if tab_bindings:
-        mui_import_tokens.extend(["Tab as MuiTab", "Tabs"])
-    mui_import_line = f'import {{ {", ".join(mui_import_tokens)} }} from "@mui/material";'
+    import_lines = [react_import]
+    if render_mode == "mui":
+        mui_import_tokens = [
+            "Box",
+            "Table",
+            "TableBody",
+            "TableCell",
+            "TableContainer",
+            "TableHead",
+            "TableRow",
+            "Typography",
+        ]
+        if tab_bindings:
+            mui_import_tokens.extend(["Tab as MuiTab", "Tabs"])
+        import_lines.append(f'import {{ {", ".join(mui_import_tokens)} }} from "@mui/material";')
+    import_lines.append(
+        (
+            f'import {{ {wiring_contract.behavior_store_hook_name} }} '
+            f'from "{wiring_contract.behavior_store_import_from_screen}";'
+        )
+    )
 
     lines = [
         "/* Generated by mifl-migrator gen-ui. */",
@@ -1319,12 +1732,7 @@ def _render_screen_component(
             f"storeImport={wiring_contract.behavior_store_import_from_screen} */"
         ),
         "",
-        react_import,
-        mui_import_line,
-        (
-            f'import {{ {wiring_contract.behavior_store_hook_name} }} '
-            f'from "{wiring_contract.behavior_store_import_from_screen}";'
-        ),
+        *import_lines,
         "",
         f"export default function {wiring_contract.screen_component_name}(): JSX.Element {{",
         f"  const {behavior_store_var} = {wiring_contract.behavior_store_hook_name}();",
@@ -1358,6 +1766,7 @@ def _render_screen_component(
             behavior_store_var=behavior_store_var,
             tab_binding_lookup=tab_binding_lookup,
             tab_page_lookup=tab_page_lookup,
+            render_mode=render_mode,
             is_root=True,
         )
     )
@@ -1377,8 +1786,10 @@ def generate_ui_codegen_artifacts(
     screen: ScreenIR,
     input_xml_path: str,
     out_dir: str | Path,
+    mode: UiRenderPolicyMode = "mui",
 ) -> UiCodegenReport:
     out_root = Path(out_dir).resolve()
+    policy_decision = _resolve_render_policy(screen=screen, requested_mode=mode)
     wiring_contract = build_runtime_wiring_contract(screen.screen_id)
     tsx_path = out_root / "src" / "screens" / f"{wiring_contract.screen_file_stem}.tsx"
     tsx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1402,6 +1813,7 @@ def generate_ui_codegen_artifacts(
             event_action_lookup=_build_event_action_lookup(
                 behavior_report.event_action_bindings
             ),
+            render_mode=policy_decision.resolved_mode,
         ),
         encoding="utf-8",
     )
@@ -1426,6 +1838,10 @@ def generate_ui_codegen_artifacts(
             runtime_wired_event_props=event_wiring_stats.runtime_wired_event_props,
             unsupported_event_bindings=len(unsupported_event_inventory),
         ),
+        requested_mode=policy_decision.requested_mode,
+        mode=policy_decision.resolved_mode,
+        decision_reason=policy_decision.decision_reason,
+        risk_score=policy_decision.risk_score,
         unsupported_event_inventory=unsupported_event_inventory,
         warnings=warnings,
     )
@@ -1435,5 +1851,7 @@ __all__ = [
     "UnsupportedUiEventBinding",
     "UiCodegenReport",
     "UiCodegenSummary",
+    "UiRenderMode",
+    "UiRenderPolicyMode",
     "generate_ui_codegen_artifacts",
 ]

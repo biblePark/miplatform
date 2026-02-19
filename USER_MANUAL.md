@@ -202,6 +202,36 @@ python3 scripts/real_sample_baseline.py diff \
 - `tolerance_evaluation.violations`가 허용치 초과 KPI를 정확히 기록하는지
 - `--strict` 실행 시 허용치 초과가 있으면 종료 코드 `2`로 실패하는지
 
+### 4.2.2 리포트 조회 UX (R11)
+
+JSON 리포트를 직접 열지 않고, 조회 전용 스크립트로 핵심 지표를 빠르게 확인할 수 있습니다.
+
+```bash
+# 텍스트 요약 조회 (기본)
+python3 scripts/report_view.py out/e2e/<파일명>.migration-summary.json
+python3 scripts/report_view.py out/e2e/prototype-acceptance.json
+python3 scripts/report_view.py out/real-sample-e2e-regression/regression-summary.json
+```
+
+```bash
+# 디렉터리 전체 스캔 + 기계처리용 JSON 출력
+python3 scripts/report_view.py out/real-sample-e2e-regression \
+  --format json \
+  --pretty
+```
+
+출력 계약 요약:
+
+- 지원 리포트 타입: `migration_summary`, `regression_summary`, `prototype_acceptance`
+- JSON 출력 루트 필드:
+- `schema_version`
+- `report_count`
+- `reports[]` (`source_file`, `report_type`, `summary`)
+- 디렉터리 입력 시 비지원 JSON은 스킵되며 stderr에 스킵 개수가 출력됩니다.
+- 명시적으로 지정한 파일이 비지원 계약이면 종료 코드 `2`로 실패합니다.
+
+수용 게이트의 성공/실패 기준은 `docs/QA_GATES.md`를 참고하세요.
+
 ### 4.3 단일 XML 파싱 검증
 
 ```bash
