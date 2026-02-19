@@ -11,9 +11,12 @@ from urllib.parse import parse_qs, urlparse
 
 from .cli import run_migrate_e2e
 from .runner_service import (
+    BatchScheduledHook,
+    CooperativeCancelHook,
     JOB_STATUS_VALUES,
     OrchestratorApiError,
     OrchestratorJobRequest,
+    PipelineRunner,
     RunnerService,
 )
 
@@ -27,7 +30,25 @@ def _utc_now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-OrchestratorService = RunnerService
+class OrchestratorService(RunnerService):
+    """Backward-compatible orchestrator facade bound to cli.run_migrate_e2e."""
+
+    def __init__(
+        self,
+        workspace_root: str | Path | None = None,
+        *,
+        job_store_path: str | Path | None = None,
+        pipeline_runner: PipelineRunner | None = None,
+        cooperative_cancel_hook: CooperativeCancelHook | None = None,
+        batch_scheduled_hook: BatchScheduledHook | None = None,
+    ) -> None:
+        super().__init__(
+            workspace_root=workspace_root,
+            job_store_path=job_store_path,
+            pipeline_runner=pipeline_runner or (lambda namespace: run_migrate_e2e(namespace)),
+            cooperative_cancel_hook=cooperative_cancel_hook,
+            batch_scheduled_hook=batch_scheduled_hook,
+        )
 
 
 class OrchestratorHttpServer(ThreadingHTTPServer):
@@ -288,10 +309,9 @@ def create_orchestrator_http_server(
     job_store_path: str | Path | None = None,
     service: RunnerService | None = None,
 ) -> OrchestratorHttpServer:
-    orchestrator_service = service or RunnerService(
+    orchestrator_service = service or OrchestratorService(
         workspace_root=workspace_root,
         job_store_path=job_store_path,
-        pipeline_runner=lambda namespace: run_migrate_e2e(namespace),
     )
     handler = _build_handler(orchestrator_service)
     return OrchestratorHttpServer((host, port), handler, service=orchestrator_service)

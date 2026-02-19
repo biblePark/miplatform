@@ -731,9 +731,17 @@ def run_preview_smoke(args: argparse.Namespace) -> int:
 
 
 def run_desktop_shell(args: argparse.Namespace) -> int:
-    from .desktop import launch_desktop_shell
-
-    return launch_desktop_shell(exec_event_loop=not args.no_event_loop)
+    try:
+        desktop_module = __import__("migrator.desktop", fromlist=["launch_desktop_shell"])
+        launch_desktop_shell = getattr(desktop_module, "launch_desktop_shell")
+    except ImportError:
+        print(
+            "Desktop shell module is unavailable. "
+            "Merge R13 desktop lanes and install desktop deps (PySide6) first.",
+            file=sys.stderr,
+        )
+        return 2
+    return int(launch_desktop_shell(exec_event_loop=not args.no_event_loop))
 
 
 def run_migrate_e2e(args: argparse.Namespace) -> int:
