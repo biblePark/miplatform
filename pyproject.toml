@@ -17,6 +17,7 @@ desktop = ["PySide6>=6.6"]
 mifl-migrator = "migrator.cli:main"
 mifl-migrator-api = "migrator.orchestrator_api:main"
 mifl-migrator-desktop = "migrator.desktop.app:main"
+mifl-migrator-desktop-filepicker = "migrator.desktop_app:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}

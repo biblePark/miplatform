@@ -20,6 +20,7 @@
 
 - `python3`
 - `node` + `npm` (preview-host 확인용)
+- `PySide6` (R13 데스크톱 GUI 사용 시)
 
 프로젝트 루트로 이동:
 
@@ -47,6 +48,34 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 - `data/`, `out/`, `generated/`, `*.xml`은 기본적으로 Git 추적 대상이 아닙니다.
 
 ## 4. 기본 작업 순서
+
+### 4.0 데스크톱 GUI 배치 워크플로우 (R13)
+
+R13 기준 기본 운영 경로는 웹 Studio 확장이 아니라 Python 데스크톱 GUI입니다.  
+웹(`preview-host`)은 생성된 React 결과를 확인하는 용도로만 사용합니다.
+
+실행:
+
+```bash
+PYTHONPATH=src python3 -m migrator.desktop_app
+```
+
+주요 기능:
+
+- 단일 XML 파일 선택 (native file picker)
+- 소스 폴더 선택 + `Recursive` + `glob pattern` 조건으로 XML 큐 해석
+- 출력 루트 디렉터리 선택 (native folder picker)
+- 배치 실행 플랜 생성:
+- `run_id`, `items[]`, 항목별 결정론적 출력 레이아웃(`out_dir`, `api_out_dir`, `ui_out_dir`, `preview_host_dir`)
+- 배치 요약 계약 생성:
+- 상태 카운터(`queued/succeeded/failed/...`)
+- 항목별 `summary_out`, `is_retry_candidate`
+- 실패 항목만 추려 `failure-only retry plan` 생성
+
+생성 파일(예시):
+
+- `out/<...>/desktop-runs/<run_id>/batch-run-plan.json`
+- `out/<...>/desktop-runs/<run_id>/batch-run-summary.json`
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
