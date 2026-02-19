@@ -416,6 +416,16 @@ npm install
 npm run dev
 ```
 
+Studio 모니터링(`/studio`)까지 사용하려면 Orchestrator API도 함께 실행하세요:
+
+```bash
+cd /Users/biblepark/Desktop/works/miflatform-migrator
+PYTHONPATH=src python3 -m migrator.orchestrator_api --host 127.0.0.1 --port 8765 --workspace-root .
+```
+
+- `preview-host/vite.config.ts`는 기본적으로 `/jobs`, `/health`를 `http://127.0.0.1:8765`로 프록시합니다.
+- 다른 API 주소를 사용하려면 `MIFL_STUDIO_API_TARGET` 환경변수를 설정한 뒤 `npm run dev`를 실행하세요.
+
 참고:
 
 - Preview Host는 대형 ERP 화면 확인을 위해 데스크탑 캔버스 기준으로 표시됩니다.
@@ -424,6 +434,7 @@ npm run dev
 접속:
 
 - `http://127.0.0.1:5173/`
+- `http://127.0.0.1:5173/studio`
 - `http://127.0.0.1:5173/preview/<screenId>`
 
 `screenId` 확인 방법:

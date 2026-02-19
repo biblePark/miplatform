@@ -56,6 +56,13 @@ Run local orchestrator API server:
 PYTHONPATH=src python3 -m migrator.orchestrator_api --host 127.0.0.1 --port 8765 --workspace-root .
 ```
 
+Run preview host studio UI (`/studio`, API proxied to `127.0.0.1:8765` by default):
+
+```bash
+cd preview-host
+npm run dev
+```
+
 Run strict parse on one XML:
 
 ```bash
