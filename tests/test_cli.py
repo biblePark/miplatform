@@ -6,6 +6,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -872,6 +873,15 @@ class TestCli(unittest.TestCase):
             self.assertEqual(payload["unresolved_module_count"], 1)
             unresolved = next(item for item in payload["screens"] if item["screen_id"] == "Missing")
             self.assertFalse(unresolved["route_resolvable"])
+
+    def test_desktop_shell_command_dispatches_launcher(self) -> None:
+        with mock.patch("migrator.cli.run_desktop_shell", return_value=0) as launcher:
+            rc = main(["desktop-shell", "--no-event-loop"])
+
+        self.assertEqual(rc, 0)
+        launcher.assert_called_once()
+        args = launcher.call_args.args[0]
+        self.assertTrue(args.no_event_loop)
 
 
 if __name__ == "__main__":
