@@ -52,6 +52,20 @@ def _load_known_attrs(path: str | None) -> dict[str, set[str]] | None:
     return {tag: set(attrs) for tag, attrs in raw.items()}
 
 
+def _parse_unit_interval(value: str) -> float:
+    try:
+        parsed = float(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(
+            f"Expected float value between 0.0 and 1.0, got '{value}'."
+        ) from exc
+    if parsed < 0.0 or parsed > 1.0:
+        raise argparse.ArgumentTypeError(
+            f"Expected value between 0.0 and 1.0, got {parsed}."
+        )
+    return parsed
+
+
 def _add_common_parse_options(command: argparse.ArgumentParser) -> None:
     command.add_argument("--strict", action="store_true", help="Fail when validation gates fail")
     command.add_argument("--capture-text", action="store_true", help="Capture node text bodies")
@@ -84,6 +98,14 @@ def _add_render_policy_mode_option(command: argparse.ArgumentParser) -> None:
         help=(
             "UI render policy mode "
             "(strict=low-level coordinate fidelity, mui=high-level MUI-first, auto=risk-based)"
+        ),
+    )
+    command.add_argument(
+        "--auto-risk-threshold",
+        type=_parse_unit_interval,
+        help=(
+            "Optional risk threshold override for auto policy mode (0.0-1.0). "
+            "When omitted, the built-in default or MIFL_UI_AUTO_RISK_THRESHOLD env value is used."
         ),
     )
 
@@ -601,6 +623,7 @@ def run_gen_ui(args: argparse.Namespace) -> int:
         input_xml_path=args.xml_path,
         out_dir=args.out_dir,
         mode=args.render_policy_mode,
+        auto_risk_threshold=args.auto_risk_threshold,
     )
     report_out = Path(args.report_out).resolve()
     _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
@@ -831,6 +854,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     input_xml_path=str(xml_path),
                     out_dir=args.ui_out_dir,
                     mode=args.render_policy_mode,
+                    auto_risk_threshold=args.auto_risk_threshold,
                 )
             except Exception as exc:  # pragma: no cover - defensive path
                 error_message = f"{type(exc).__name__}: {exc}"
@@ -867,6 +891,9 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     "mode": ui_report.mode,
                     "decision_reason": ui_report.decision_reason,
                     "risk_score": ui_report.risk_score,
+                    "auto_risk_threshold": ui_report.auto_risk_threshold,
+                    "risk_signal_counts": ui_report.risk_signal_counts,
+                    "risk_signal_scores": ui_report.risk_signal_scores,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
 

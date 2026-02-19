@@ -56,6 +56,17 @@ class TestUiCodegen(unittest.TestCase):
             self.assertEqual(report.mode, "mui")
             self.assertIn("explicit_mui_mode", report.decision_reason)
             self.assertGreaterEqual(report.risk_score, 0.0)
+            self.assertEqual(report.auto_risk_threshold, 0.58)
+            self.assertEqual(
+                set(report.risk_signal_counts),
+                {"total_nodes", "positioned_nodes", "fallback_nodes", "tab_nodes", "event_attributes"},
+            )
+            self.assertEqual(report.risk_signal_counts["total_nodes"], report.summary.total_nodes)
+            self.assertEqual(
+                set(report.risk_signal_scores),
+                {"positioned_nodes", "fallback_nodes", "event_attributes", "tab_nodes", "total"},
+            )
+            self.assertEqual(report.risk_signal_scores["total"], report.risk_score)
 
             tsx_text = tsx_path.read_text(encoding="utf-8")
             self.assertIn("export default function SimpleScreenFixtureScreen", tsx_text)
@@ -92,6 +103,7 @@ class TestUiCodegen(unittest.TestCase):
             self.assertEqual(report.requested_mode, "strict")
             self.assertEqual(report.mode, "strict")
             self.assertIn("explicit_strict_mode", report.decision_reason)
+            self.assertEqual(report.auto_risk_threshold, 0.58)
             self.assertNotIn('from "@mui/material"', tsx_text)
             self.assertIn('<div className="mi-widget-shell mi-widget-shell-button"', tsx_text)
             self.assertIn('<button className="mi-widget mi-widget-button"', tsx_text)
@@ -235,7 +247,11 @@ class TestUiCodegen(unittest.TestCase):
             self.assertEqual(report.requested_mode, "auto")
             self.assertEqual(report.mode, "strict")
             self.assertIn("auto_selected_strict_high_fidelity_risk", report.decision_reason)
+            self.assertEqual(report.auto_risk_threshold, 0.58)
             self.assertGreaterEqual(report.risk_score, 0.58)
+            self.assertGreater(report.risk_signal_scores["fallback_nodes"], 0.0)
+            self.assertGreater(report.risk_signal_scores["tab_nodes"], 0.0)
+            self.assertEqual(report.risk_signal_scores["total"], report.risk_score)
             self.assertNotIn('from "@mui/material"', tsx_text)
             self.assertIn("onClick={() => setTabIndex0(0)}", tsx_text)
             self.assertIn(
@@ -245,6 +261,68 @@ class TestUiCodegen(unittest.TestCase):
                 ),
                 report.warnings,
             )
+
+    def test_generate_ui_codegen_artifacts_auto_mode_respects_threshold_override(self) -> None:
+        parsed = parse_xml_file(FIXTURE_XML)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            default_report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir / "default-auto",
+                mode="auto",
+            )
+            low_threshold_report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir / "low-threshold-auto",
+                mode="auto",
+                auto_risk_threshold=0.10,
+            )
+            high_threshold_report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir / "high-threshold-auto",
+                mode="auto",
+                auto_risk_threshold=0.95,
+            )
+
+            self.assertEqual(default_report.mode, "mui")
+            self.assertEqual(default_report.auto_risk_threshold, 0.58)
+            self.assertEqual(low_threshold_report.mode, "strict")
+            self.assertEqual(low_threshold_report.auto_risk_threshold, 0.1)
+            self.assertEqual(high_threshold_report.mode, "mui")
+            self.assertEqual(high_threshold_report.auto_risk_threshold, 0.95)
+
+    def test_generate_ui_codegen_artifacts_explicit_modes_ignore_auto_policy_threshold(
+        self,
+    ) -> None:
+        parsed = parse_xml_file(FIXTURE_XML)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            strict_report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir / "strict",
+                mode="strict",
+                auto_risk_threshold=0.01,
+            )
+            mui_report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(FIXTURE_XML),
+                out_dir=out_dir / "mui",
+                mode="mui",
+                auto_risk_threshold=0.01,
+            )
+
+            self.assertEqual(strict_report.mode, "strict")
+            self.assertEqual(strict_report.auto_risk_threshold, 0.01)
+            self.assertIn("explicit_strict_mode", strict_report.decision_reason)
+            self.assertEqual(mui_report.mode, "mui")
+            self.assertEqual(mui_report.auto_risk_threshold, 0.01)
+            self.assertIn("explicit_mui_mode", mui_report.decision_reason)
 
     def test_generate_ui_codegen_artifacts_warns_for_minimal_screen(self) -> None:
         screen = ScreenIR(

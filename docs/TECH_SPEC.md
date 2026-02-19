@@ -138,6 +138,8 @@ CLI contract:
 - `mifl-migrator parse <xml_path> --out <report.json> [--strict] [--capture-text] [--known-tags-file <txt>] [--known-attrs-file <json>] [--disable-roundtrip-gate] [--roundtrip-mismatch-limit <n>] [--pretty]`
 - `mifl-migrator batch-parse <input_dir> --out-dir <dir> --summary-out <summary.json> [--recursive] [single-parse options...]`
 - `mifl-migrator map-api <xml_path> --out-dir <generated_api_dir> --report-out <mapping_report.json> [single-parse options...]`
+- `mifl-migrator gen-ui <xml_path> --out-dir <generated_ui_dir> --report-out <ui_report.json> [single-parse options...] [--render-policy-mode <strict|mui|auto>] [--auto-risk-threshold <0.0-1.0>]`
+- `mifl-migrator migrate-e2e <xml_path> [single-parse options...] [--render-policy-mode <strict|mui|auto>] [--auto-risk-threshold <0.0-1.0>]`
 
 Known-profile inputs:
 
@@ -289,16 +291,25 @@ Event/action runtime contract:
 - `summary.total_event_attributes`
 - `summary.runtime_wired_event_props`
 - `summary.unsupported_event_bindings`
+- Render policy decision evidence is preserved in structured report fields:
+- `requested_mode`, `mode`, `decision_reason`, `risk_score`
+- `auto_risk_threshold`: effective threshold used by policy evaluator
+- `risk_signal_counts`: `total_nodes`, `positioned_nodes`, `fallback_nodes`, `tab_nodes`, `event_attributes`
+- `risk_signal_scores`: weighted per-signal contributions (`positioned_nodes`, `fallback_nodes`, `event_attributes`, `tab_nodes`) and `total`
 - `unsupported_event_inventory[]` entries with deterministic order and fields:
 - `node_path`, `node_tag`, `event_name`, `source_attr_name`, `handler`, `action_name`, `reason`, `warning`, `source`
 - `reason` values:
 - `missing_behavior_action_binding`
 - `missing_react_event_mapping`
+- `auto` mode threshold source priority:
+- CLI option `--auto-risk-threshold` (or function argument in library usage)
+- environment variable `MIFL_UI_AUTO_RISK_THRESHOLD`
+- built-in default `0.58`
 
 Generation behavior update:
 
 - `gen-ui` now also emits deterministic behavior scaffolds under `src/behavior/` so generated screen imports are immediately resolvable.
-- `migrate-e2e` `gen_ui` stage metadata includes behavior file references and event wiring counters (`wired_event_bindings`, `total_event_attributes`, `runtime_wired_event_props`, `unsupported_event_bindings`).
+- `migrate-e2e` `gen_ui` stage metadata includes behavior file references and event wiring counters (`wired_event_bindings`, `total_event_attributes`, `runtime_wired_event_props`, `unsupported_event_bindings`) plus render policy evidence (`requested_mode`, `mode`, `decision_reason`, `risk_score`, `auto_risk_threshold`, `risk_signal_counts`, `risk_signal_scores`).
 - Widget materialization baseline now includes legacy aliases:
 - container-like tags: `window`, `form`, `div`, `shape`, `tab`, `tabpage`
 - widget-like tags: `textarea`, `maskedit`, `image`, `radio`, `checkbox`, `calendar`, `spin`, `treeview`, `webbrowser`, `msie`, `rexpert`

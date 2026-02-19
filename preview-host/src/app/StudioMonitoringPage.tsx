@@ -18,6 +18,8 @@ import {
   inferStageUpdateFromLog,
   inferStageUpdateFromStatusMessage,
   type MonitoringLogLine,
+  type MonitoringRunHistoryItem,
+  type MonitoringRunHistoryStatus,
   type MonitoringStageKey,
   type MonitoringStageStatus,
   type MonitoringTimelineItem,
@@ -25,6 +27,8 @@ import {
 import {
   createStudioAdapter,
   isStudioAbortError,
+  toStudioErrorMetadata,
+  type StudioErrorMetadata,
   type StudioRunConfig,
   type StudioRunReport,
   type StudioRunState,
@@ -32,6 +36,7 @@ import {
 
 const MAX_TIMELINE_ITEMS = 250;
 const MAX_LOG_ITEMS = 700;
+const MAX_RUN_HISTORY_ITEMS = 12;
 
 const DEFAULT_RUN_CONFIG: StudioRunConfig = {
   sourceXmlPath: "./xml/sample.xml",
@@ -68,18 +73,20 @@ function timelineToneFromStageStatus(
   return "neutral";
 }
 
-function getErrorMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
 function updateBoundedList<T>(prev: T[], nextItem: T, maxItems: number): T[] {
   if (prev.length + 1 <= maxItems) {
     return [...prev, nextItem];
   }
   return [...prev.slice(prev.length + 1 - maxItems), nextItem];
+}
+
+function cloneRunConfig(config: StudioRunConfig): StudioRunConfig {
+  return {
+    sourceXmlPath: config.sourceXmlPath,
+    outputPath: config.outputPath,
+    previewHostPath: config.previewHostPath,
+    renderMode: config.renderMode,
+  };
 }
 
 interface ConfigFieldProps {
@@ -101,6 +108,9 @@ export function StudioMonitoringPage() {
   const abortRef = useRef<AbortController | null>(null);
   const timelineCounterRef = useRef(0);
   const logCounterRef = useRef(0);
+  const historyCounterRef = useRef(0);
+  const activeRunIdRef = useRef<string | null>(null);
+  const activeRunStartedAtRef = useRef<string | null>(null);
 
   const [config, setConfig] = useState<StudioRunConfig>(DEFAULT_RUN_CONFIG);
   const [runState, setRunState] = useState<StudioRunState>("idle");
@@ -111,11 +121,14 @@ export function StudioMonitoringPage() {
   const [timeline, setTimeline] = useState<MonitoringTimelineItem[]>([]);
   const [logs, setLogs] = useState<MonitoringLogLine[]>([]);
   const [report, setReport] = useState<StudioRunReport | null>(null);
-  const [runtimeErrorMessage, setRuntimeErrorMessage] = useState<string | null>(null);
+  const [runtimeError, setRuntimeError] = useState<StudioErrorMetadata | null>(null);
+  const [runHistory, setRunHistory] = useState<MonitoringRunHistoryItem[]>([]);
+  const [lastRunConfig, setLastRunConfig] = useState<StudioRunConfig | null>(null);
+  const [cancelPending, setCancelPending] = useState(false);
 
   const failureDetail = useMemo(
-    () => buildFailureDetail(report, stages, runtimeErrorMessage),
-    [report, stages, runtimeErrorMessage],
+    () => buildFailureDetail(report, stages, runtimeError),
+    [report, stages, runtimeError],
   );
 
   useEffect(
@@ -153,6 +166,18 @@ export function StudioMonitoringPage() {
     };
     setLogs((prev) => updateBoundedList(prev, nextLine, MAX_LOG_ITEMS));
   }, []);
+
+  const appendRunHistory = useCallback(
+    (item: Omit<MonitoringRunHistoryItem, "id">) => {
+      historyCounterRef.current += 1;
+      const nextHistory: MonitoringRunHistoryItem = {
+        id: `run-history-${historyCounterRef.current}`,
+        ...item,
+      };
+      setRunHistory((prev) => updateBoundedList(prev, nextHistory, MAX_RUN_HISTORY_ITEMS));
+    },
+    [],
+  );
 
   const setStageStatus = useCallback(
     (
@@ -196,7 +221,7 @@ export function StudioMonitoringPage() {
     setTimeline([]);
     setLogs([]);
     setReport(null);
-    setRuntimeErrorMessage(null);
+    setRuntimeError(null);
     timelineCounterRef.current = 0;
     logCounterRef.current = 0;
   }, [adapter.name]);
@@ -212,143 +237,273 @@ export function StudioMonitoringPage() {
     [],
   );
 
-  const handleCancel = useCallback(() => {
-    if (!abortRef.current) {
-      return;
-    }
-    abortRef.current.abort();
-  }, []);
-
-  const handleRun = useCallback(async () => {
-    if (runState === "running") {
-      return;
-    }
-
-    const controller = new AbortController();
-    abortRef.current = controller;
-    resetRunState();
-    appendTimeline(
-      "Run Requested",
-      `source=${config.sourceXmlPath}, output=${config.outputPath}`,
-      "neutral",
-    );
-
-    try {
-      const result = await adapter.run(
-        config,
-        {
-          onStatus: (state, message) => {
-            const timestamp = new Date().toISOString();
-            setRunState(state);
-            setStatusMessage(message);
-
-            const stageKey = inferStageUpdateFromStatusMessage(message);
-            if (stageKey && state === "running") {
-              setStageStatus(stageKey, "running", timestamp);
-              appendTimeline(
-                `${stageKey} running`,
-                message,
-                timelineToneFromStageStatus("running"),
-                timestamp,
-              );
-            } else {
-              appendTimeline(
-                `State: ${state}`,
-                message,
-                timelineToneFromState(state),
-                timestamp,
-              );
-            }
-          },
-          onLog: (entry) => {
-            appendLog({
-              level: entry.level,
-              message: entry.message,
-              timestamp: entry.timestamp,
-            });
-
-            const inferred = inferStageUpdateFromLog(entry);
-            if (inferred) {
-              setStageStatus(inferred.stageKey, inferred.status, entry.timestamp);
-              appendTimeline(
-                `${inferred.stageKey} ${inferred.status}`,
-                entry.message,
-                timelineToneFromStageStatus(inferred.status),
-                entry.timestamp,
-              );
-            }
-
-            if (entry.level === "error") {
-              setRuntimeErrorMessage((prev) => prev ?? entry.message);
-            }
-          },
-          onReport: (nextReport) => {
-            const timestamp = new Date().toISOString();
-            setReport(nextReport);
-            setRunId(nextReport.runId);
-            setStatusMessage(nextReport.summaryMessage);
-            setStages((prev) => applyReportToStages(prev, nextReport, timestamp));
-
-            appendTimeline(
-              "Report Received",
-              `${nextReport.verdict}: ${nextReport.summaryMessage}`,
-              nextReport.verdict === "success" ? "success" : "error",
-              timestamp,
-            );
-
-            nextReport.stageSummaries.forEach((summary) => {
-              const stageKey = findStageKeyByText(summary.stage);
-              if (!stageKey) {
-                return;
-              }
-              appendTimeline(
-                `${stageKey} ${summary.status}`,
-                `warnings=${summary.warnings}, errors=${summary.errors}`,
-                timelineToneFromStageStatus(summary.status),
-                timestamp,
-              );
-            });
-          },
-        },
-        controller.signal,
-      );
-
-      setRunId(result.report.runId);
-      setAdapterName(result.adapterName);
-      setRunState(result.finalState);
-      setStatusMessage(result.report.summaryMessage);
-      appendTimeline(
-        "Run Finished",
-        result.report.summaryMessage,
-        result.finalState === "completed" ? "success" : "error",
-      );
-    } catch (error) {
-      if (isStudioAbortError(error)) {
-        setRunState("idle");
-        setStatusMessage("Run cancelled by user.");
-        appendTimeline(
-          "Run Cancelled",
-          "사용자 요청으로 실행이 중단되었습니다.",
-          "warning",
-        );
+  const executeRun = useCallback(
+    async (nextConfig: StudioRunConfig) => {
+      if (runState === "running") {
         return;
       }
 
-      const message = getErrorMessage(error);
-      setRunState("failed");
-      setStatusMessage(message);
-      setRuntimeErrorMessage(message);
-      appendTimeline("Run Failed", message, "error");
-    } finally {
-      abortRef.current = null;
+      const submittedConfig = cloneRunConfig(nextConfig);
+      const startedAt = new Date().toISOString();
+
+      activeRunStartedAtRef.current = startedAt;
+      activeRunIdRef.current = null;
+      setLastRunConfig(submittedConfig);
+
+      const controller = new AbortController();
+      abortRef.current = controller;
+      resetRunState();
+      appendTimeline(
+        "Run Requested",
+        `source=${submittedConfig.sourceXmlPath}, output=${submittedConfig.outputPath}`,
+        "neutral",
+        startedAt,
+      );
+
+      try {
+        const result = await adapter.run(
+          submittedConfig,
+          {
+            onRunId: (nextRunId) => {
+              if (activeRunIdRef.current === nextRunId) {
+                return;
+              }
+              activeRunIdRef.current = nextRunId;
+              setRunId(nextRunId);
+              appendTimeline("Run Registered", `runId=${nextRunId}`, "neutral");
+            },
+            onStatus: (state, message) => {
+              const timestamp = new Date().toISOString();
+              setRunState(state);
+              setStatusMessage(message);
+
+              const stageKey = inferStageUpdateFromStatusMessage(message);
+              if (stageKey && state === "running") {
+                setStageStatus(stageKey, "running", timestamp);
+                appendTimeline(
+                  `${stageKey} running`,
+                  message,
+                  timelineToneFromStageStatus("running"),
+                  timestamp,
+                );
+              } else {
+                appendTimeline(
+                  `State: ${state}`,
+                  message,
+                  timelineToneFromState(state),
+                  timestamp,
+                );
+              }
+            },
+            onLog: (entry) => {
+              appendLog({
+                level: entry.level,
+                message: entry.message,
+                timestamp: entry.timestamp,
+              });
+
+              const inferred = inferStageUpdateFromLog(entry);
+              if (inferred) {
+                setStageStatus(inferred.stageKey, inferred.status, entry.timestamp);
+                appendTimeline(
+                  `${inferred.stageKey} ${inferred.status}`,
+                  entry.message,
+                  timelineToneFromStageStatus(inferred.status),
+                  entry.timestamp,
+                );
+              }
+
+              if (entry.level === "error") {
+                setRuntimeError((prev) =>
+                  prev ?? {
+                    code: null,
+                    message: entry.message,
+                  },
+                );
+              }
+            },
+            onReport: (nextReport) => {
+              const timestamp = new Date().toISOString();
+              const reportError = nextReport.error;
+              setReport(nextReport);
+              setRunId(nextReport.runId);
+              setStatusMessage(nextReport.summaryMessage);
+              setStages((prev) => applyReportToStages(prev, nextReport, timestamp));
+
+              if (reportError) {
+                setRuntimeError((prev) =>
+                  prev ?? {
+                    code: reportError.code,
+                    message: reportError.message,
+                    details: reportError.details,
+                  },
+                );
+              }
+
+              appendTimeline(
+                "Report Received",
+                `${nextReport.verdict}: ${nextReport.summaryMessage}`,
+                nextReport.verdict === "success" ? "success" : "error",
+                timestamp,
+              );
+
+              nextReport.stageSummaries.forEach((summary) => {
+                const stageKey = findStageKeyByText(summary.stage);
+                if (!stageKey) {
+                  return;
+                }
+                appendTimeline(
+                  `${stageKey} ${summary.status}`,
+                  `warnings=${summary.warnings}, errors=${summary.errors}`,
+                  timelineToneFromStageStatus(summary.status),
+                  timestamp,
+                );
+              });
+            },
+          },
+          controller.signal,
+        );
+
+        const endedAt = new Date().toISOString();
+        const completedRunId = result.report.runId ?? activeRunIdRef.current;
+        const completedStatus: MonitoringRunHistoryStatus =
+          result.finalState === "completed" ? "completed" : "failed";
+
+        setRunId(completedRunId);
+        setAdapterName(result.adapterName);
+        setRunState(result.finalState);
+        setStatusMessage(result.report.summaryMessage);
+
+        if (result.report.error) {
+          setRuntimeError({
+            code: result.report.error.code,
+            message: result.report.error.message,
+            details: result.report.error.details,
+          });
+        }
+
+        appendTimeline(
+          "Run Finished",
+          result.report.summaryMessage,
+          result.finalState === "completed" ? "success" : "error",
+          endedAt,
+        );
+
+        appendRunHistory({
+          runId: completedRunId,
+          status: completedStatus,
+          startedAt,
+          endedAt,
+          summaryMessage: result.report.summaryMessage,
+        });
+      } catch (error) {
+        const endedAt = new Date().toISOString();
+        const activeRunId = activeRunIdRef.current;
+
+        if (isStudioAbortError(error)) {
+          setRunState("idle");
+          setStatusMessage("Run cancelled by user.");
+          appendTimeline(
+            "Run Cancelled",
+            "사용자 요청으로 실행이 중단되었습니다.",
+            "warning",
+            endedAt,
+          );
+          appendRunHistory({
+            runId: activeRunId,
+            status: "cancelled",
+            startedAt,
+            endedAt,
+            summaryMessage: "Run cancelled by user.",
+          });
+          return;
+        }
+
+        const errorMeta = toStudioErrorMetadata(error);
+        setRunState("failed");
+        setStatusMessage(errorMeta.message);
+        setRuntimeError(errorMeta);
+        appendTimeline("Run Failed", errorMeta.message, "error", endedAt);
+        appendRunHistory({
+          runId: activeRunId,
+          status: "failed",
+          startedAt,
+          endedAt,
+          summaryMessage: errorMeta.message,
+        });
+      } finally {
+        abortRef.current = null;
+        activeRunStartedAtRef.current = null;
+        activeRunIdRef.current = null;
+        setCancelPending(false);
+      }
+    },
+    [
+      adapter,
+      appendLog,
+      appendRunHistory,
+      appendTimeline,
+      resetRunState,
+      runState,
+      setStageStatus,
+    ],
+  );
+
+  const handleCancel = useCallback(async () => {
+    if (runState !== "running" || cancelPending) {
+      return;
     }
-  }, [adapter, appendLog, appendTimeline, config, resetRunState, runState, setStageStatus]);
+
+    setCancelPending(true);
+    const targetRunId = activeRunIdRef.current ?? runId;
+    const requestedAt = new Date().toISOString();
+
+    appendTimeline(
+      "Cancel Requested",
+      targetRunId ? `runId=${targetRunId}` : "active runId not available",
+      "warning",
+      requestedAt,
+    );
+
+    try {
+      await adapter.cancel(targetRunId);
+      appendTimeline(
+        "Cancel API Accepted",
+        targetRunId ? `runId=${targetRunId}` : "cancel request acknowledged",
+        "warning",
+      );
+    } catch (error) {
+      const errorMeta = toStudioErrorMetadata(error);
+      appendTimeline("Cancel API Failed", errorMeta.message, "warning");
+      appendLog({
+        level: "warn",
+        message: `Cancel API failed: ${errorMeta.message}`,
+        timestamp: new Date().toISOString(),
+      });
+    } finally {
+      abortRef.current?.abort();
+    }
+  }, [adapter, appendLog, appendTimeline, cancelPending, runId, runState]);
+
+  const handleRun = useCallback(() => {
+    void executeRun(config);
+  }, [config, executeRun]);
+
+  const handleRetry = useCallback(() => {
+    if (!lastRunConfig || runState === "running") {
+      return;
+    }
+    const retryConfig = cloneRunConfig(lastRunConfig);
+    setConfig(retryConfig);
+    void executeRun(retryConfig);
+  }, [executeRun, lastRunConfig, runState]);
 
   const runDisabled =
     runState === "running" ||
     config.sourceXmlPath.trim().length === 0 ||
     config.outputPath.trim().length === 0 ||
     config.previewHostPath.trim().length === 0;
+  const retryDisabled = runState === "running" || lastRunConfig === null;
 
   return (
     <main className="studio-monitor-main">
@@ -397,8 +552,15 @@ export function StudioMonitoringPage() {
             <button type="button" onClick={handleRun} disabled={runDisabled}>
               Start Run
             </button>
-            <button type="button" onClick={handleCancel} disabled={runState !== "running"}>
-              Cancel
+            <button
+              type="button"
+              onClick={handleCancel}
+              disabled={runState !== "running" || cancelPending}
+            >
+              {cancelPending ? "Cancelling..." : "Cancel"}
+            </button>
+            <button type="button" onClick={handleRetry} disabled={retryDisabled}>
+              Retry Last Config
             </button>
           </div>
         </section>
@@ -411,6 +573,7 @@ export function StudioMonitoringPage() {
           stages={stages}
           timeline={timeline}
           logs={logs}
+          runHistory={runHistory}
           errorDetail={failureDetail}
         />
       </div>

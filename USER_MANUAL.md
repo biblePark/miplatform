@@ -50,7 +50,7 @@ mkdir -p data/input/xml data/input/profiles out generated/frontend/src/screens
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
-하나의 XML 기준으로 `parse -> map-api -> gen-ui -> fidelity-audit -> sync-preview`를 한 번에 실행합니다. (`gen-ui` 단계에서 behavior store/actions wiring 산출물도 함께 생성)
+하나의 XML 기준으로 `parse -> map-api -> gen-ui -> fidelity-audit -> sync-preview -> preview-smoke`를 한 번에 실행합니다. (`gen-ui` 단계에서 behavior store/actions wiring 산출물도 함께 생성)
 
 ```bash
 PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
@@ -68,7 +68,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 주요 산출물:
 
 - 통합 요약 리포트: `out/e2e/<파일명>.migration-summary.json`
-- 단계별 리포트: `out/e2e/<파일명>.parse-report.json`, `out/e2e/<파일명>.map-api-report.json`, `out/e2e/<파일명>.gen-ui-report.json`, `out/e2e/<파일명>.fidelity-audit-report.json`, `out/e2e/<파일명>.preview-sync-report.json`
+- 단계별 리포트: `out/e2e/<파일명>.parse-report.json`, `out/e2e/<파일명>.map-api-report.json`, `out/e2e/<파일명>.gen-ui-report.json`, `out/e2e/<파일명>.fidelity-audit-report.json`, `out/e2e/<파일명>.preview-sync-report.json`, `out/e2e/<파일명>.preview-smoke-report.json`
 - 생성 코드:
 - API 스텁: `generated/api/src/routes`, `generated/api/src/services`
 - UI 화면: `generated/frontend/src/screens`
@@ -78,7 +78,7 @@ PYTHONPATH=src python3 -m migrator migrate-e2e data/input/xml/<파일명>.xml \
 확인 포인트:
 
 - 통합 리포트 `overall_status`, `overall_exit_code`
-- `stages`별 상태(`parse`, `map_api`, `gen_ui`, `fidelity_audit`, `sync_preview`)
+- `stages`별 상태(`parse`, `map_api`, `gen_ui`, `fidelity_audit`, `sync_preview`, `preview_smoke`)
 - `stages.gen_ui` 이벤트 wiring 지표:
 - `wired_event_bindings`
 - `total_event_attributes`
@@ -426,6 +426,24 @@ PYTHONPATH=src python3 -m migrator.orchestrator_api --host 127.0.0.1 --port 8765
 - `preview-host/vite.config.ts`는 기본적으로 `/jobs`, `/health`를 `http://127.0.0.1:8765`로 프록시합니다.
 - 다른 API 주소를 사용하려면 `MIFL_STUDIO_API_TARGET` 환경변수를 설정한 뒤 `npm run dev`를 실행하세요.
 
+Studio + Orchestrator 연계 스모크(자동) 실행:
+
+```bash
+python3 -m unittest -v tests.test_orchestrator_api
+```
+
+핵심 확인 테스트:
+
+- `test_studio_orchestrator_e2e_smoke_contract`
+- `test_post_jobs_cancel_marks_running_job_as_canceled`
+- `test_history_retry_flow_records_failed_then_successful_reexecution`
+
+R12 QA 게이트 묶음 실행:
+
+```bash
+python3 scripts/run_r12_qa_gates.py
+```
+
 참고:
 
 - Preview Host는 대형 ERP 화면 확인을 위해 데스크탑 캔버스 기준으로 표시됩니다.
@@ -476,5 +494,7 @@ npm run build
 6. `real_sample_baseline.py snapshot`으로 기준 라운드 베이스라인 저장
 7. `real_sample_baseline.py diff --strict`로 라운드 델타/허용치 게이트 검증
 8. `preview-smoke` 실행 후 `out/preview-smoke-report.json`의 `unresolved_module_count == 0` 확인
-9. `preview-host`에서 `npm run dev`로 육안 확인
-10. `preview-host`에서 `npm run build` 최종 확인
+9. `python3 -m unittest -v tests.test_orchestrator_api`로 Studio/Orchestrator 연계 스모크 확인
+10. `python3 scripts/run_r12_qa_gates.py`로 R12 게이트 묶음 검증
+11. `preview-host`에서 `npm run dev`로 육안 확인
+12. `preview-host`에서 `npm run build` 최종 확인

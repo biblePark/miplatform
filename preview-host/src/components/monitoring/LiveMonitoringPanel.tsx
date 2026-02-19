@@ -2,7 +2,9 @@ import type { StudioRunState } from "../studio/studioAdapter";
 import {
   computeProgressPercent,
   toStageList,
+  type MonitoringFailureDetail,
   type MonitoringLogLine,
+  type MonitoringRunHistoryItem,
   type MonitoringStageStateMap,
   type MonitoringTimelineItem,
 } from "./monitoringModel";
@@ -15,7 +17,8 @@ interface LiveMonitoringPanelProps {
   stages: MonitoringStageStateMap;
   timeline: MonitoringTimelineItem[];
   logs: MonitoringLogLine[];
-  errorDetail: string | null;
+  runHistory: MonitoringRunHistoryItem[];
+  errorDetail: MonitoringFailureDetail | null;
 }
 
 function toRunStateLabel(state: StudioRunState): string {
@@ -56,6 +59,34 @@ function formatTime(value: string | null): string {
   return date.toLocaleTimeString();
 }
 
+function formatDateTime(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleString();
+}
+
+function toHistoryStatusLabel(status: MonitoringRunHistoryItem["status"]): string {
+  if (status === "completed") {
+    return "Completed";
+  }
+  if (status === "failed") {
+    return "Failed";
+  }
+  return "Cancelled";
+}
+
+function toHistoryTone(status: MonitoringRunHistoryItem["status"]): "neutral" | "success" | "warning" | "error" {
+  if (status === "completed") {
+    return "success";
+  }
+  if (status === "failed") {
+    return "error";
+  }
+  return "warning";
+}
+
 export function LiveMonitoringPanel({
   runId,
   adapterName,
@@ -64,6 +95,7 @@ export function LiveMonitoringPanel({
   stages,
   timeline,
   logs,
+  runHistory,
   errorDetail,
 }: LiveMonitoringPanelProps) {
   const progressPercent = computeProgressPercent(stages);
@@ -110,10 +142,57 @@ export function LiveMonitoringPanel({
         </div>
       </div>
 
+      <section className="monitoring-history-card">
+        <p className="monitoring-card-title">Run History</p>
+        {runHistory.length === 0 ? (
+          <p className="monitoring-empty-message">No run history yet.</p>
+        ) : (
+          <ul className="monitoring-history-list">
+            {runHistory.map((item) => (
+              <li key={item.id} className="monitoring-history-item">
+                <div className="monitoring-history-head">
+                  <span className={`monitoring-run-pill monitoring-run-pill-${toHistoryTone(item.status)}`}>
+                    {toHistoryStatusLabel(item.status)}
+                  </span>
+                  <span className="monitoring-history-run-id">
+                    runId: <code>{item.runId ?? "-"}</code>
+                  </span>
+                </div>
+                <p className="monitoring-history-summary">{item.summaryMessage}</p>
+                <p className="monitoring-history-meta">
+                  start={formatDateTime(item.startedAt)} | end={formatDateTime(item.endedAt)}
+                </p>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
       {errorDetail ? (
         <section className="monitoring-error-card">
           <p className="monitoring-card-title">Failure Detail</p>
-          <pre>{errorDetail}</pre>
+          <dl className="monitoring-error-grid">
+            <div>
+              <dt>Error Code</dt>
+              <dd>
+                <code>{errorDetail.code}</code>
+              </dd>
+            </div>
+            <div>
+              <dt>Message</dt>
+              <dd>{errorDetail.message}</dd>
+            </div>
+            <div>
+              <dt>Details</dt>
+              <dd>
+                <ul className="monitoring-error-detail-list">
+                  {errorDetail.details.map((item, index) => (
+                    <li key={`${errorDetail.code}-${index}`}>{item}</li>
+                  ))}
+                </ul>
+              </dd>
+            </div>
+          </dl>
         </section>
       ) : null}
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 import json
+import os
 from pathlib import Path
 import re
 from typing import Any, Literal
@@ -192,6 +193,7 @@ _TEXT_ALIGN_ALIASES = {
 }
 _RENDER_POLICY_MODES = frozenset({"strict", "mui", "auto"})
 _AUTO_RENDER_POLICY_RISK_THRESHOLD = 0.58
+_AUTO_RENDER_POLICY_RISK_THRESHOLD_ENV = "MIFL_UI_AUTO_RISK_THRESHOLD"
 
 UiRenderPolicyMode = Literal["strict", "mui", "auto"]
 UiRenderMode = Literal["strict", "mui"]
@@ -234,6 +236,9 @@ class UiCodegenReport:
     mode: UiRenderMode
     decision_reason: str
     risk_score: float
+    auto_risk_threshold: float
+    risk_signal_counts: dict[str, int]
+    risk_signal_scores: dict[str, float]
     unsupported_event_inventory: list[UnsupportedUiEventBinding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -277,6 +282,9 @@ class _RenderPolicyDecision:
     resolved_mode: UiRenderMode
     decision_reason: str
     risk_score: float
+    auto_risk_threshold: float
+    risk_signal_counts: dict[str, int]
+    risk_signal_scores: dict[str, float]
 
 
 def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
@@ -772,6 +780,30 @@ def _normalize_render_policy_mode(mode: str) -> UiRenderPolicyMode:
     )
 
 
+def _resolve_auto_render_policy_risk_threshold(override: float | None) -> float:
+    candidate: float | str | None = override
+    if candidate is None:
+        env_value = os.getenv(_AUTO_RENDER_POLICY_RISK_THRESHOLD_ENV)
+        if env_value is not None and env_value.strip():
+            candidate = env_value.strip()
+    if candidate is None:
+        return _AUTO_RENDER_POLICY_RISK_THRESHOLD
+
+    try:
+        threshold = float(candidate)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(
+            "Auto render policy threshold must be a float between 0.0 and 1.0 "
+            f"(source: function arg or env {_AUTO_RENDER_POLICY_RISK_THRESHOLD_ENV})."
+        ) from exc
+    if threshold < 0.0 or threshold > 1.0:
+        raise ValueError(
+            "Auto render policy threshold must be between 0.0 and 1.0 "
+            f"(got {threshold})."
+        )
+    return round(threshold, 4)
+
+
 def _collect_render_risk_signals(node: AstNode) -> _RenderRiskSignals:
     signals = _RenderRiskSignals()
 
@@ -800,34 +832,68 @@ def _collect_render_risk_signals(node: AstNode) -> _RenderRiskSignals:
     return signals
 
 
-def _compute_render_risk_score(signals: _RenderRiskSignals) -> float:
+def _to_render_risk_signal_counts(signals: _RenderRiskSignals) -> dict[str, int]:
+    return {
+        "total_nodes": signals.total_nodes,
+        "positioned_nodes": signals.positioned_nodes,
+        "fallback_nodes": signals.fallback_nodes,
+        "tab_nodes": signals.tab_nodes,
+        "event_attributes": signals.event_attributes,
+    }
+
+
+def _compute_render_risk_signal_scores(signals: _RenderRiskSignals) -> dict[str, float]:
     if signals.total_nodes <= 0:
-        return 0.0
+        return {
+            "positioned_nodes": 0.0,
+            "fallback_nodes": 0.0,
+            "event_attributes": 0.0,
+            "tab_nodes": 0.0,
+            "total": 0.0,
+        }
     position_ratio = signals.positioned_nodes / signals.total_nodes
     fallback_ratio = signals.fallback_nodes / signals.total_nodes
     event_density = signals.event_attributes / signals.total_nodes
     tab_presence = 1.0 if signals.tab_nodes > 0 else 0.0
-    raw_score = (
-        (min(1.0, position_ratio) * 0.4)
-        + (min(1.0, fallback_ratio * 4.0) * 0.4)
-        + (min(1.0, event_density / 2.0) * 0.1)
-        + (tab_presence * 0.1)
-    )
-    return round(min(1.0, raw_score), 4)
+    positioned_score = min(1.0, position_ratio) * 0.4
+    fallback_score = min(1.0, fallback_ratio * 4.0) * 0.4
+    event_score = min(1.0, event_density / 2.0) * 0.1
+    tab_score = tab_presence * 0.1
+    total = min(1.0, positioned_score + fallback_score + event_score + tab_score)
+    return {
+        "positioned_nodes": round(positioned_score, 4),
+        "fallback_nodes": round(fallback_score, 4),
+        "event_attributes": round(event_score, 4),
+        "tab_nodes": round(tab_score, 4),
+        "total": round(total, 4),
+    }
 
 
 def _resolve_render_policy(
     *,
     screen: ScreenIR,
     requested_mode: str,
+    auto_risk_threshold: float | None = None,
 ) -> _RenderPolicyDecision:
     normalized_mode = _normalize_render_policy_mode(requested_mode)
+    threshold = _AUTO_RENDER_POLICY_RISK_THRESHOLD
+    if normalized_mode == "auto":
+        threshold = _resolve_auto_render_policy_risk_threshold(auto_risk_threshold)
+    elif auto_risk_threshold is not None:
+        threshold = _resolve_auto_render_policy_risk_threshold(auto_risk_threshold)
     signals = _collect_render_risk_signals(screen.root)
-    risk_score = _compute_render_risk_score(signals)
+    risk_signal_counts = _to_render_risk_signal_counts(signals)
+    risk_signal_scores = _compute_render_risk_signal_scores(signals)
+    risk_score = risk_signal_scores["total"]
     signal_snapshot = (
-        f"risk={risk_score:.4f}; positioned_nodes={signals.positioned_nodes}/{signals.total_nodes}; "
+        f"risk={risk_score:.4f}; threshold={threshold:.4f}; "
+        f"positioned_nodes={signals.positioned_nodes}/{signals.total_nodes}; "
         f"fallback_nodes={signals.fallback_nodes}; tab_nodes={signals.tab_nodes}; "
-        f"event_attrs={signals.event_attributes}"
+        f"event_attrs={signals.event_attributes}; "
+        f"signal_scores=positioned_nodes:{risk_signal_scores['positioned_nodes']:.4f},"
+        f"fallback_nodes:{risk_signal_scores['fallback_nodes']:.4f},"
+        f"event_attributes:{risk_signal_scores['event_attributes']:.4f},"
+        f"tab_nodes:{risk_signal_scores['tab_nodes']:.4f}"
     )
 
     if normalized_mode == "strict":
@@ -836,6 +902,9 @@ def _resolve_render_policy(
             resolved_mode="strict",
             decision_reason=f"explicit_strict_mode ({signal_snapshot})",
             risk_score=risk_score,
+            auto_risk_threshold=threshold,
+            risk_signal_counts=risk_signal_counts,
+            risk_signal_scores=risk_signal_scores,
         )
     if normalized_mode == "mui":
         return _RenderPolicyDecision(
@@ -843,25 +912,34 @@ def _resolve_render_policy(
             resolved_mode="mui",
             decision_reason=f"explicit_mui_mode ({signal_snapshot})",
             risk_score=risk_score,
+            auto_risk_threshold=threshold,
+            risk_signal_counts=risk_signal_counts,
+            risk_signal_scores=risk_signal_scores,
         )
-    if risk_score >= _AUTO_RENDER_POLICY_RISK_THRESHOLD:
+    if risk_score >= threshold:
         return _RenderPolicyDecision(
             requested_mode=normalized_mode,
             resolved_mode="strict",
             decision_reason=(
                 "auto_selected_strict_high_fidelity_risk "
-                f"({signal_snapshot}; threshold={_AUTO_RENDER_POLICY_RISK_THRESHOLD:.2f})"
+                f"({signal_snapshot})"
             ),
             risk_score=risk_score,
+            auto_risk_threshold=threshold,
+            risk_signal_counts=risk_signal_counts,
+            risk_signal_scores=risk_signal_scores,
         )
     return _RenderPolicyDecision(
         requested_mode=normalized_mode,
         resolved_mode="mui",
         decision_reason=(
             "auto_selected_mui_low_fidelity_risk "
-            f"({signal_snapshot}; threshold={_AUTO_RENDER_POLICY_RISK_THRESHOLD:.2f})"
+            f"({signal_snapshot})"
         ),
         risk_score=risk_score,
+        auto_risk_threshold=threshold,
+        risk_signal_counts=risk_signal_counts,
+        risk_signal_scores=risk_signal_scores,
     )
 
 
@@ -1787,9 +1865,14 @@ def generate_ui_codegen_artifacts(
     input_xml_path: str,
     out_dir: str | Path,
     mode: UiRenderPolicyMode = "mui",
+    auto_risk_threshold: float | None = None,
 ) -> UiCodegenReport:
     out_root = Path(out_dir).resolve()
-    policy_decision = _resolve_render_policy(screen=screen, requested_mode=mode)
+    policy_decision = _resolve_render_policy(
+        screen=screen,
+        requested_mode=mode,
+        auto_risk_threshold=auto_risk_threshold,
+    )
     wiring_contract = build_runtime_wiring_contract(screen.screen_id)
     tsx_path = out_root / "src" / "screens" / f"{wiring_contract.screen_file_stem}.tsx"
     tsx_path.parent.mkdir(parents=True, exist_ok=True)
@@ -1842,6 +1925,9 @@ def generate_ui_codegen_artifacts(
         mode=policy_decision.resolved_mode,
         decision_reason=policy_decision.decision_reason,
         risk_score=policy_decision.risk_score,
+        auto_risk_threshold=policy_decision.auto_risk_threshold,
+        risk_signal_counts=policy_decision.risk_signal_counts,
+        risk_signal_scores=policy_decision.risk_signal_scores,
         unsupported_event_inventory=unsupported_event_inventory,
         warnings=warnings,
     )

@@ -11,7 +11,7 @@ import re
 import shutil
 import threading
 from typing import Any, Literal
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from uuid import uuid4
 
 from .cli import UI_RENDER_POLICY_MODE_CHOICES, run_migrate_e2e
@@ -33,6 +33,8 @@ PREVIEW_HOST_COPY_IGNORE_PATTERNS: tuple[str, ...] = ("node_modules", ".vite", "
 _JOB_PATTERN = re.compile(r"^/jobs/(?P<job_id>[^/]+)$")
 _JOB_LOGS_PATTERN = re.compile(r"^/jobs/(?P<job_id>[^/]+)/logs$")
 _JOB_ARTIFACTS_PATTERN = re.compile(r"^/jobs/(?P<job_id>[^/]+)/artifacts$")
+_JOB_CANCEL_PATTERN = re.compile(r"^/jobs/(?P<job_id>[^/]+)/cancel$")
+_JOB_STORE_VERSION = 1
 
 
 def _utc_now_iso() -> str:
@@ -110,6 +112,7 @@ class OrchestratorJobRequest:
     disable_roundtrip_gate: bool
     roundtrip_mismatch_limit: int
     render_policy_mode: str
+    auto_risk_threshold: float | None
     pretty: bool
     use_isolated_preview_host: bool
     preview_host_source_dir: str | None
@@ -136,6 +139,7 @@ class OrchestratorJobRequest:
             disable_roundtrip_gate=self.disable_roundtrip_gate,
             roundtrip_mismatch_limit=self.roundtrip_mismatch_limit,
             render_policy_mode=self.render_policy_mode,
+            auto_risk_threshold=self.auto_risk_threshold,
             pretty=self.pretty,
         )
 
@@ -161,6 +165,7 @@ class OrchestratorJobRequest:
             "disable_roundtrip_gate": self.disable_roundtrip_gate,
             "roundtrip_mismatch_limit": self.roundtrip_mismatch_limit,
             "render_policy_mode": self.render_policy_mode,
+            "auto_risk_threshold": self.auto_risk_threshold,
             "pretty": self.pretty,
             "use_isolated_preview_host": self.use_isolated_preview_host,
             "preview_host_source_dir": self.preview_host_source_dir,
@@ -182,17 +187,31 @@ class _JobState:
     summary_payload: dict[str, Any] | None = None
     completed_at_utc: str | None = None
     error: dict[str, Any] | None = None
+    cancel_requested: bool = False
+    cancel_requested_at_utc: str | None = None
 
 
 class OrchestratorService:
-    def __init__(self, workspace_root: str | Path | None = None) -> None:
+    def __init__(
+        self,
+        workspace_root: str | Path | None = None,
+        *,
+        job_store_path: str | Path | None = None,
+    ) -> None:
         root = Path.cwd() if workspace_root is None else Path(workspace_root)
         self.workspace_root = root.resolve()
+        self._job_store_path = (
+            _as_abs_path(Path(job_store_path), self.workspace_root)
+            if job_store_path is not None
+            else (self.workspace_root / "out" / "orchestrator" / "jobs.json").resolve()
+        )
 
         self._jobs: dict[str, _JobState] = {}
         self._lock = threading.Lock()
         self._queue: Queue[str | None] = Queue()
         self._shutdown_event = threading.Event()
+        with self._lock:
+            self._load_jobs_from_store_locked()
         self._worker = threading.Thread(
             target=self._run_worker,
             name="mifl-orchestrator-worker",
@@ -234,6 +253,7 @@ class OrchestratorService:
                 event="job_queued",
                 message="Job accepted and queued.",
             )
+            self._persist_jobs_locked()
         self._queue.put(job_id)
         return self.get_job(job_id)
 
@@ -248,6 +268,115 @@ class OrchestratorService:
                     details={"job_id": job_id},
                 )
             return self._job_to_dict(job)
+
+    def list_jobs(
+        self,
+        *,
+        limit: int = 50,
+        status_filter: set[str] | None = None,
+    ) -> dict[str, Any]:
+        if limit <= 0:
+            raise OrchestratorApiError(
+                400,
+                code="validation_error",
+                message="`limit` must be a positive integer.",
+                details={"field": "limit", "minimum": 1, "actual": limit},
+            )
+        if status_filter:
+            invalid_statuses = sorted(status for status in status_filter if status not in JOB_STATUS_VALUES)
+            if invalid_statuses:
+                raise OrchestratorApiError(
+                    400,
+                    code="validation_error",
+                    message=f"`status` must be one of {sorted(JOB_STATUS_VALUES)}.",
+                    details={"field": "status", "actual": invalid_statuses},
+                )
+
+        with self._lock:
+            selected = sorted(
+                self._jobs.values(),
+                key=lambda item: (item.created_at_utc, item.job_id),
+                reverse=True,
+            )
+            if status_filter:
+                selected = [job for job in selected if job.status in status_filter]
+            total = len(selected)
+            jobs = [self._job_to_dict(job) for job in selected[:limit]]
+
+        response: dict[str, Any] = {
+            "jobs": jobs,
+            "total": total,
+            "limit": limit,
+        }
+        if status_filter:
+            response["status_filter"] = sorted(status_filter)
+        return response
+
+    def cancel_job(self, job_id: str) -> dict[str, Any]:
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                raise OrchestratorApiError(
+                    404,
+                    code="job_not_found",
+                    message=f"Job not found: {job_id}",
+                    details={"job_id": job_id},
+                )
+
+            if job.status in TERMINAL_JOB_STATUSES:
+                return self._job_to_dict(job)
+
+            now = _utc_now_iso()
+            job.cancel_requested = True
+            job.cancel_requested_at_utc = job.cancel_requested_at_utc or now
+
+            if job.status == "queued":
+                self._mark_job_canceled_locked(
+                    job,
+                    message="Job canceled before execution.",
+                    event="job_canceled",
+                )
+            else:
+                self._append_log_locked(
+                    job,
+                    level="info",
+                    event="cancel_requested",
+                    message="Cancel request accepted for running job.",
+                )
+            self._persist_jobs_locked()
+            return self._job_to_dict(job)
+
+    def _mark_job_canceled_locked(
+        self,
+        job: _JobState,
+        *,
+        message: str,
+        event: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        now = _utc_now_iso()
+        job.status = "canceled"
+        job.completed_at_utc = now
+        job.updated_at_utc = now
+
+        error_details: dict[str, Any] = {"job_id": job.job_id}
+        if job.cancel_requested_at_utc:
+            error_details["requested_at_utc"] = job.cancel_requested_at_utc
+        if details:
+            error_details.update(details)
+
+        job.error = {
+            "code": "job_canceled",
+            "message": message,
+            "details": error_details,
+        }
+        self._append_log_locked(
+            job,
+            level="info",
+            event=event,
+            message=message,
+            details=error_details,
+        )
 
     def get_job_logs(self, job_id: str) -> dict[str, Any]:
         with self._lock:
@@ -295,6 +424,7 @@ class OrchestratorService:
                     job = self._jobs.get(job_id)
                     if job is not None:
                         job.summary_payload = summary_payload
+                        self._persist_jobs_locked()
 
         if summary_payload is None:
             raise OrchestratorApiError(
@@ -408,6 +538,7 @@ class OrchestratorService:
             choices=UI_RENDER_POLICY_MODE_CHOICES,
             default="mui",
         )
+        auto_risk_threshold = self._optional_unit_interval(payload, "auto_risk_threshold")
 
         summary_out = self._optional_path(payload, "summary_out")
         parse_report_out = self._optional_path(payload, "parse_report_out")
@@ -439,6 +570,7 @@ class OrchestratorService:
             disable_roundtrip_gate=disable_roundtrip_gate,
             roundtrip_mismatch_limit=roundtrip_mismatch_limit,
             render_policy_mode=render_policy_mode,
+            auto_risk_threshold=auto_risk_threshold,
             pretty=pretty,
             use_isolated_preview_host=use_isolated_preview_host,
             preview_host_source_dir=preview_host_source_dir,
@@ -504,6 +636,27 @@ class OrchestratorService:
             )
         return value
 
+    def _optional_unit_interval(self, payload: dict[str, Any], key: str) -> float | None:
+        value = payload.get(key)
+        if value is None:
+            return None
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            raise OrchestratorApiError(
+                400,
+                code="validation_error",
+                message=f"`{key}` must be a number between 0.0 and 1.0.",
+                details={"field": key},
+            )
+        numeric = float(value)
+        if numeric < 0.0 or numeric > 1.0:
+            raise OrchestratorApiError(
+                400,
+                code="validation_error",
+                message=f"`{key}` must be between 0.0 and 1.0.",
+                details={"field": key, "actual": numeric},
+            )
+        return numeric
+
     def _optional_choice_string(
         self,
         payload: dict[str, Any],
@@ -556,6 +709,154 @@ class OrchestratorService:
             return default.resolve() if default is not None else None
         return _as_abs_path(Path(value), self.workspace_root)
 
+    def _load_jobs_from_store_locked(self) -> None:
+        if not self._job_store_path.exists():
+            return
+        try:
+            raw = json.loads(self._job_store_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return
+        if not isinstance(raw, dict):
+            return
+        raw_jobs = raw.get("jobs")
+        if not isinstance(raw_jobs, list):
+            return
+
+        loaded_jobs: list[_JobState] = []
+        for raw_job in raw_jobs:
+            if not isinstance(raw_job, dict):
+                continue
+            parsed = self._job_state_from_record(raw_job)
+            if parsed is not None:
+                loaded_jobs.append(parsed)
+
+        loaded_jobs.sort(key=lambda item: (item.created_at_utc, item.job_id))
+        self._jobs = {job.job_id: job for job in loaded_jobs}
+
+        if self._recover_incomplete_jobs_locked():
+            self._persist_jobs_locked()
+
+    def _recover_incomplete_jobs_locked(self) -> bool:
+        changed = False
+        for job in self._jobs.values():
+            if job.status in TERMINAL_JOB_STATUSES:
+                continue
+            previous_status = job.status
+            now = _utc_now_iso()
+            job.status = "failed"
+            job.completed_at_utc = now
+            job.updated_at_utc = now
+            job.error = {
+                "code": "job_incomplete_after_restart",
+                "message": "Job did not complete before orchestrator restart.",
+                "details": {"previous_status": previous_status},
+            }
+            self._append_log_locked(
+                job,
+                level="error",
+                event="job_incomplete_after_restart",
+                message="Job was marked as failed after orchestrator restart.",
+                details={"previous_status": previous_status},
+            )
+            changed = True
+        return changed
+
+    def _job_state_to_record(self, job: _JobState) -> dict[str, Any]:
+        return {
+            "job_id": job.job_id,
+            "status": job.status,
+            "created_at_utc": job.created_at_utc,
+            "updated_at_utc": job.updated_at_utc,
+            "request": job.request.to_public_dict(),
+            "request_payload": job.request_payload,
+            "logs": job.logs,
+            "log_sequence": job.log_sequence,
+            "exit_code": job.exit_code,
+            "summary_file": job.summary_file,
+            "summary_payload": job.summary_payload,
+            "completed_at_utc": job.completed_at_utc,
+            "error": job.error,
+            "cancel_requested": job.cancel_requested,
+            "cancel_requested_at_utc": job.cancel_requested_at_utc,
+        }
+
+    def _job_state_from_record(self, record: dict[str, Any]) -> _JobState | None:
+        job_id_raw = record.get("job_id", record.get("id"))
+        if not isinstance(job_id_raw, str) or not job_id_raw:
+            return None
+
+        status_raw = record.get("status")
+        if status_raw not in JOB_STATUS_VALUES:
+            return None
+
+        request_raw = record.get("request_payload")
+        if not isinstance(request_raw, dict):
+            request_raw = record.get("request")
+        if not isinstance(request_raw, dict):
+            return None
+
+        request_payload = dict(request_raw)
+        request_payload.setdefault("auto_risk_threshold", None)
+
+        try:
+            request = OrchestratorJobRequest(**request_payload)
+        except TypeError:
+            return None
+
+        created_at_raw = record.get("created_at_utc")
+        created_at = created_at_raw if isinstance(created_at_raw, str) and created_at_raw else _utc_now_iso()
+        updated_at_raw = record.get("updated_at_utc")
+        updated_at = updated_at_raw if isinstance(updated_at_raw, str) and updated_at_raw else created_at
+
+        logs_raw = record.get("logs", [])
+        logs = [entry for entry in logs_raw if isinstance(entry, dict)] if isinstance(logs_raw, list) else []
+
+        log_sequence_raw = record.get("log_sequence", len(logs))
+        log_sequence = log_sequence_raw if isinstance(log_sequence_raw, int) and log_sequence_raw >= 0 else len(logs)
+
+        exit_code_raw = record.get("exit_code")
+        summary_payload_raw = record.get("summary_payload")
+        completed_at_raw = record.get("completed_at_utc")
+        error_raw = record.get("error")
+        cancel_requested_at_raw = record.get("cancel_requested_at_utc")
+
+        return _JobState(
+            job_id=job_id_raw,
+            status=status_raw,
+            created_at_utc=created_at,
+            updated_at_utc=updated_at,
+            request=request,
+            request_payload=request_payload,
+            logs=logs,
+            log_sequence=log_sequence,
+            exit_code=exit_code_raw if isinstance(exit_code_raw, int) else None,
+            summary_file=record.get("summary_file") if isinstance(record.get("summary_file"), str) else None,
+            summary_payload=summary_payload_raw if isinstance(summary_payload_raw, dict) else None,
+            completed_at_utc=completed_at_raw if isinstance(completed_at_raw, str) else None,
+            error=error_raw if isinstance(error_raw, dict) else None,
+            cancel_requested=bool(record.get("cancel_requested", False)),
+            cancel_requested_at_utc=(
+                cancel_requested_at_raw if isinstance(cancel_requested_at_raw, str) else None
+            ),
+        )
+
+    def _persist_jobs_locked(self) -> None:
+        snapshot = {
+            "version": _JOB_STORE_VERSION,
+            "updated_at_utc": _utc_now_iso(),
+            "jobs": [
+                self._job_state_to_record(job)
+                for job in sorted(self._jobs.values(), key=lambda item: (item.created_at_utc, item.job_id))
+            ],
+        }
+        self._job_store_path.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = self._job_store_path.with_suffix(f"{self._job_store_path.suffix}.tmp")
+        try:
+            temp_path.write_text(json.dumps(snapshot, ensure_ascii=False, indent=2), encoding="utf-8")
+            temp_path.replace(self._job_store_path)
+        except OSError:
+            return
+
     def _run_worker(self) -> None:
         while True:
             if self._shutdown_event.is_set() and self._queue.empty():
@@ -577,6 +878,14 @@ class OrchestratorService:
                 return
             if job.status == "canceled":
                 return
+            if job.cancel_requested:
+                self._mark_job_canceled_locked(
+                    job,
+                    message="Job canceled before execution.",
+                    event="job_canceled",
+                )
+                self._persist_jobs_locked()
+                return
             job.status = "running"
             job.updated_at_utc = _utc_now_iso()
             self._append_log_locked(
@@ -586,6 +895,7 @@ class OrchestratorService:
                 message="Job execution started.",
             )
             request = job.request
+            self._persist_jobs_locked()
 
         try:
             if request.use_isolated_preview_host:
@@ -593,6 +903,14 @@ class OrchestratorService:
                 with self._lock:
                     current = self._jobs.get(job_id)
                     if current is not None:
+                        if current.cancel_requested:
+                            self._mark_job_canceled_locked(
+                                current,
+                                message="Job canceled before pipeline execution.",
+                                event="job_canceled",
+                            )
+                            self._persist_jobs_locked()
+                            return
                         self._append_log_locked(
                             current,
                             level="info",
@@ -600,16 +918,26 @@ class OrchestratorService:
                             message="Isolated preview-host workspace prepared.",
                             details={"preview_host_dir": request.preview_host_dir},
                         )
+                        self._persist_jobs_locked()
 
             with self._lock:
                 current = self._jobs.get(job_id)
                 if current is not None:
+                    if current.cancel_requested:
+                        self._mark_job_canceled_locked(
+                            current,
+                            message="Job canceled before pipeline execution.",
+                            event="job_canceled",
+                        )
+                        self._persist_jobs_locked()
+                        return
                     self._append_log_locked(
                         current,
                         level="info",
                         event="pipeline_started",
                         message="Running migrate-e2e pipeline.",
                     )
+                    self._persist_jobs_locked()
 
             exit_code = run_migrate_e2e(request.to_cli_namespace())
             summary_path = (
@@ -645,12 +973,24 @@ class OrchestratorService:
                 if current is None:
                     return
                 now = _utc_now_iso()
-                current.status = completion_status
                 current.exit_code = exit_code
                 current.summary_file = str(summary_path)
                 current.summary_payload = summary_payload
-                current.completed_at_utc = now
                 current.updated_at_utc = now
+                if current.cancel_requested:
+                    self._mark_job_canceled_locked(
+                        current,
+                        message="Job canceled by request.",
+                        event="job_canceled",
+                        details={
+                            "exit_code": exit_code,
+                            "summary_file": str(summary_path),
+                        },
+                    )
+                    self._persist_jobs_locked()
+                    return
+                current.status = completion_status
+                current.completed_at_utc = now
                 current.error = completion_error
                 level = "info" if completion_status == "succeeded" else "error"
                 self._append_log_locked(
@@ -664,26 +1004,39 @@ class OrchestratorService:
                     ),
                     details={"exit_code": exit_code, "summary_file": str(summary_path)},
                 )
+                self._persist_jobs_locked()
         except Exception as exc:  # pragma: no cover - defensive path
             with self._lock:
                 current = self._jobs.get(job_id)
                 if current is None:
                     return
-                now = _utc_now_iso()
-                current.status = "failed"
-                current.completed_at_utc = now
-                current.updated_at_utc = now
-                current.error = {
-                    "code": "job_execution_exception",
-                    "message": f"{type(exc).__name__}: {exc}",
-                }
-                self._append_log_locked(
-                    current,
-                    level="error",
-                    event="job_exception",
-                    message="Unhandled exception during job execution.",
-                    details={"exception_type": type(exc).__name__, "exception_message": str(exc)},
-                )
+                if current.cancel_requested:
+                    self._mark_job_canceled_locked(
+                        current,
+                        message="Job canceled by request.",
+                        event="job_canceled",
+                        details={
+                            "exception_type": type(exc).__name__,
+                            "exception_message": str(exc),
+                        },
+                    )
+                else:
+                    now = _utc_now_iso()
+                    current.status = "failed"
+                    current.completed_at_utc = now
+                    current.updated_at_utc = now
+                    current.error = {
+                        "code": "job_execution_exception",
+                        "message": f"{type(exc).__name__}: {exc}",
+                    }
+                    self._append_log_locked(
+                        current,
+                        level="error",
+                        event="job_exception",
+                        message="Unhandled exception during job execution.",
+                        details={"exception_type": type(exc).__name__, "exception_message": str(exc)},
+                    )
+                self._persist_jobs_locked()
 
     def _prepare_isolated_preview_host(self, request: OrchestratorJobRequest) -> None:
         source_raw = request.preview_host_source_dir
@@ -744,6 +1097,8 @@ class OrchestratorService:
             "status": job.status,
             "created_at_utc": job.created_at_utc,
             "updated_at_utc": job.updated_at_utc,
+            "cancel_requested": job.cancel_requested,
+            "cancel_requested_at_utc": job.cancel_requested_at_utc,
             "pipeline_stages": list(PIPELINE_STAGE_ORDER),
             "request": job.request_payload,
             "result": result,
@@ -782,6 +1137,12 @@ def _build_handler(service: OrchestratorService) -> type[BaseHTTPRequestHandler]
             parsed = urlparse(self.path)
             path = self._normalize_path(parsed.path)
             try:
+                cancel_match = _JOB_CANCEL_PATTERN.match(path)
+                if cancel_match:
+                    job_id = cancel_match.group("job_id")
+                    self._send_json(202, {"job": service.cancel_job(job_id)})
+                    return
+
                 if path == "/jobs":
                     payload = self._read_json_body()
                     job = service.create_job(payload)
@@ -804,6 +1165,7 @@ def _build_handler(service: OrchestratorService) -> type[BaseHTTPRequestHandler]
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             path = self._normalize_path(parsed.path)
+            query = parse_qs(parsed.query, keep_blank_values=True)
             try:
                 if path == "/health":
                     self._send_json(
@@ -813,6 +1175,18 @@ def _build_handler(service: OrchestratorService) -> type[BaseHTTPRequestHandler]
                             "service": "mifl-migrator-orchestrator-api",
                             "time_utc": _utc_now_iso(),
                         },
+                    )
+                    return
+
+                if path == "/jobs":
+                    limit = self._parse_limit_query(query)
+                    status_filter = self._parse_status_filter_query(query)
+                    self._send_json(
+                        200,
+                        service.list_jobs(
+                            limit=limit,
+                            status_filter=status_filter,
+                        ),
                     )
                     return
 
@@ -923,6 +1297,56 @@ def _build_handler(service: OrchestratorService) -> type[BaseHTTPRequestHandler]
             normalized = path.rstrip("/")
             return normalized or "/"
 
+        def _parse_limit_query(self, query: dict[str, list[str]]) -> int:
+            raw_values = query.get("limit")
+            if not raw_values:
+                return 50
+            raw = raw_values[-1].strip()
+            try:
+                value = int(raw)
+            except ValueError as exc:
+                raise OrchestratorApiError(
+                    400,
+                    code="validation_error",
+                    message="`limit` must be a positive integer.",
+                    details={"field": "limit", "actual": raw},
+                ) from exc
+            if value <= 0:
+                raise OrchestratorApiError(
+                    400,
+                    code="validation_error",
+                    message="`limit` must be a positive integer.",
+                    details={"field": "limit", "minimum": 1, "actual": value},
+                )
+            return value
+
+        def _parse_status_filter_query(self, query: dict[str, list[str]]) -> set[str] | None:
+            raw_values = query.get("status")
+            if not raw_values:
+                return None
+            tokens: list[str] = []
+            for raw in raw_values:
+                for candidate in raw.split(","):
+                    normalized = candidate.strip()
+                    if normalized:
+                        tokens.append(normalized)
+            if not tokens:
+                raise OrchestratorApiError(
+                    400,
+                    code="validation_error",
+                    message=f"`status` must be one of {sorted(JOB_STATUS_VALUES)}.",
+                    details={"field": "status"},
+                )
+            invalid = sorted(token for token in tokens if token not in JOB_STATUS_VALUES)
+            if invalid:
+                raise OrchestratorApiError(
+                    400,
+                    code="validation_error",
+                    message=f"`status` must be one of {sorted(JOB_STATUS_VALUES)}.",
+                    details={"field": "status", "actual": invalid},
+                )
+            return set(tokens)
+
         def _raise_not_found(self, path: str) -> None:
             raise OrchestratorApiError(
                 404,
@@ -939,9 +1363,13 @@ def create_orchestrator_http_server(
     port: int = 8765,
     *,
     workspace_root: str | Path | None = None,
+    job_store_path: str | Path | None = None,
     service: OrchestratorService | None = None,
 ) -> OrchestratorHttpServer:
-    orchestrator_service = service or OrchestratorService(workspace_root=workspace_root)
+    orchestrator_service = service or OrchestratorService(
+        workspace_root=workspace_root,
+        job_store_path=job_store_path,
+    )
     handler = _build_handler(orchestrator_service)
     return OrchestratorHttpServer((host, port), handler, service=orchestrator_service)
 
@@ -951,11 +1379,13 @@ def run_orchestrator_http_server(
     port: int = 8765,
     *,
     workspace_root: str | Path | None = None,
+    job_store_path: str | Path | None = None,
 ) -> None:
     server = create_orchestrator_http_server(
         host=host,
         port=port,
         workspace_root=workspace_root,
+        job_store_path=job_store_path,
     )
     try:
         server.serve_forever()
@@ -978,6 +1408,14 @@ def build_arg_parser() -> argparse.ArgumentParser:
         default=str(Path.cwd()),
         help="Workspace root used for resolving relative paths (default: current directory)",
     )
+    parser.add_argument(
+        "--job-store-path",
+        default=None,
+        help=(
+            "Optional path to orchestrator job store JSON file "
+            "(default: <workspace-root>/out/orchestrator/jobs.json)"
+        ),
+    )
     return parser
 
 
@@ -988,6 +1426,7 @@ def main(argv: list[str] | None = None) -> int:
         host=args.host,
         port=args.port,
         workspace_root=args.workspace_root,
+        job_store_path=args.job_store_path,
     )
     return 0
 

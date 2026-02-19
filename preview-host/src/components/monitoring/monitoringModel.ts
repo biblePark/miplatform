@@ -1,4 +1,5 @@
 import type {
+  StudioErrorMetadata,
   StudioLogEvent,
   StudioRunReport,
   StudioStageSummary,
@@ -45,6 +46,23 @@ export interface MonitoringTimelineItem {
 
 export interface MonitoringLogLine extends StudioLogEvent {
   id: string;
+}
+
+export type MonitoringRunHistoryStatus = "completed" | "failed" | "cancelled";
+
+export interface MonitoringRunHistoryItem {
+  id: string;
+  runId: string | null;
+  status: MonitoringRunHistoryStatus;
+  startedAt: string;
+  endedAt: string;
+  summaryMessage: string;
+}
+
+export interface MonitoringFailureDetail {
+  code: string;
+  message: string;
+  details: string[];
 }
 
 export const MONITORING_STAGE_POLICY: readonly MonitoringStagePolicy[] = [
@@ -261,25 +279,89 @@ export function computeProgressPercent(stages: MonitoringStageStateMap): number 
 export function buildFailureDetail(
   report: StudioRunReport | null,
   stages: MonitoringStageStateMap,
-  fallbackMessage: string | null,
-): string | null {
-  if (fallbackMessage) {
-    return fallbackMessage;
-  }
-  if (!report || report.verdict !== "failure") {
+  runtimeError: StudioErrorMetadata | null,
+): MonitoringFailureDetail | null {
+  if (!runtimeError && (!report || report.verdict !== "failure")) {
     return null;
   }
 
-  const failedStages = toStageList(stages).filter((stage) => stage.status === "failure");
-  if (failedStages.length === 0) {
-    return report.summaryMessage;
+  const message =
+    runtimeError?.message ??
+    report?.error?.message ??
+    report?.summaryMessage ??
+    "Migration run failed.";
+  const code =
+    runtimeError?.code ??
+    report?.error?.code ??
+    inferErrorCodeFromMessage(message) ??
+    "pipeline_failed";
+
+  const details: string[] = [];
+
+  if (runtimeError?.details !== undefined) {
+    details.push(`runtime details: ${stringifyDetailValue(runtimeError.details)}`);
+  }
+  if (report?.error?.details !== undefined) {
+    details.push(`report details: ${stringifyDetailValue(report.error.details)}`);
+  }
+  if (report) {
+    details.push(`runId=${report.runId}`);
+    details.push(`durationMs=${report.durationMs}`);
   }
 
-  const stageText = failedStages
-    .map(
-      (stage) =>
-        `${stage.label} (warnings=${stage.warnings}, errors=${stage.errors})`,
-    )
-    .join(", ");
-  return `${report.summaryMessage} Failed stages: ${stageText}`;
+  const failedStages = toStageList(stages).filter((stage) => stage.status === "failure");
+  if (failedStages.length > 0) {
+    details.push(
+      `failed stages: ${failedStages
+        .map(
+          (stage) =>
+            `${stage.label} (warnings=${stage.warnings}, errors=${stage.errors})`,
+        )
+        .join(", ")}`,
+    );
+  }
+
+  if (details.length === 0) {
+    details.push("No additional details.");
+  }
+
+  return {
+    code,
+    message,
+    details,
+  };
+}
+
+function inferErrorCodeFromMessage(message: string): string | null {
+  const explicitCodeMatch = message.match(/\b(?:code|error_code)\s*[:=]\s*([a-z0-9_-]+)/i);
+  if (explicitCodeMatch) {
+    return explicitCodeMatch[1].toLowerCase();
+  }
+
+  const bracketedCodeMatch = message.match(/^\[([a-z0-9_-]+)\]/i);
+  if (bracketedCodeMatch) {
+    return bracketedCodeMatch[1].toLowerCase();
+  }
+
+  const knownCodeMatch = message.match(
+    /\b([a-z0-9_]+(?:_error|_failed|_exception|_timeout|_not_found|_invalid))\b/i,
+  );
+  if (knownCodeMatch) {
+    return knownCodeMatch[1].toLowerCase();
+  }
+  return null;
+}
+
+function stringifyDetailValue(value: unknown): string {
+  if (value === null || value === undefined) {
+    return "-";
+  }
+  if (typeof value === "string") {
+    return value;
+  }
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
 }
