@@ -130,6 +130,9 @@ export function PreviewHostShell({
           <a href="/" className="preview-host-home-link">
             Go to default preview route
           </a>
+          <a href="/studio" className="preview-host-home-link">
+            Open migration studio
+          </a>
         </header>
         <section className="preview-host-content-scroll">
           <div className="preview-host-canvas" ref={canvasRef} style={canvasStyle}>

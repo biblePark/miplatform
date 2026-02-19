@@ -8,6 +8,7 @@ import {
 import { screenModuleLoaders } from "../screens/registry";
 import { PreviewHostShell } from "./PreviewHostShell";
 import { PreviewScreenRoute } from "../routes/PreviewScreenRoute";
+import { StudioMonitoringPage } from "./StudioMonitoringPage";
 
 type ManifestBootstrap =
   | { error: null; manifest: ReturnType<typeof loadScreensManifest> }
@@ -58,6 +59,10 @@ export function PreviewApp() {
           }
         />
         <Route
+          path="/studio"
+          element={<StudioMonitoringPage />}
+        />
+        <Route
           path="/preview/:screenId"
           element={
             <PreviewScreenRoute
@@ -71,7 +76,7 @@ export function PreviewApp() {
           element={
             <PreviewHostShell
               title="Route Not Found"
-              subtitle="Only / and /preview/:screenId routes are supported."
+              subtitle="Only /, /studio, and /preview/:screenId routes are supported."
             >
               <p>Use a registered screenId from the manifest.</p>
             </PreviewHostShell>

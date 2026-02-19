@@ -6,6 +6,15 @@
   --preview-shell-surface: #ffffff;
   --preview-shell-header-bg: linear-gradient(135deg, #f0f6ff 0%, #f8fbff 100%);
   --preview-shell-shadow: 0 8px 24px rgba(20, 35, 60, 0.08);
+  --studio-border: #cfdbef;
+  --studio-surface: #ffffff;
+  --studio-header-bg: linear-gradient(140deg, #eef5ff 0%, #f9fbff 100%);
+  --studio-shadow: 0 10px 28px rgba(20, 35, 60, 0.08);
+  --studio-text-muted: #51658a;
+  --studio-accent: #0b62c2;
+  --studio-ok: #1e8e58;
+  --studio-warn: #a05e07;
+  --studio-fail: #bf3636;
 }
 
 * {
@@ -107,5 +116,809 @@ a {
     min-width: 0;
     width: fit-content;
     min-height: 0;
+  }
+}
+
+.studio-main {
+  min-height: 100vh;
+  padding: 12px;
+  overflow: auto;
+}
+
+.studio-shell {
+  max-width: 1280px;
+  margin: 0 auto;
+  background: var(--studio-surface);
+  border: 1px solid var(--studio-border);
+  border-radius: 14px;
+  box-shadow: var(--studio-shadow);
+}
+
+.studio-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-header-bg);
+}
+
+.studio-title {
+  margin: 0;
+  font-size: 30px;
+  line-height: 1.2;
+}
+
+.studio-subtitle {
+  margin: 8px 0 0;
+  color: var(--studio-text-muted);
+}
+
+.studio-meta-row {
+  margin: 10px 0 0;
+}
+
+.studio-link-row {
+  margin-top: 6px;
+}
+
+.studio-link {
+  color: var(--studio-accent);
+}
+
+.studio-layout {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(320px, 1fr));
+  gap: 14px;
+  padding: 14px;
+}
+
+.studio-panel {
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.studio-panel-wide {
+  grid-column: 1 / -1;
+}
+
+.studio-panel-title {
+  margin: 0 0 12px;
+  font-size: 20px;
+}
+
+.studio-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.studio-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.studio-field-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.studio-input {
+  width: 100%;
+  border: 1px solid #bed0ea;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+  color: inherit;
+  background: #ffffff;
+}
+
+.studio-input:focus {
+  outline: 2px solid #a8c8f3;
+  outline-offset: 1px;
+}
+
+.studio-render-mode-group {
+  margin: 0;
+  border: 1px solid #bed0ea;
+  border-radius: 8px;
+  padding: 8px 10px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+}
+
+.studio-render-option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 14px;
+}
+
+.studio-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.studio-button {
+  border: 1px solid #a5bfe2;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  color: #17345c;
+  background: #f1f6ff;
+}
+
+.studio-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.studio-button-primary {
+  background: var(--studio-accent);
+  border-color: var(--studio-accent);
+  color: #ffffff;
+}
+
+.studio-button-secondary {
+  background: #ffffff;
+}
+
+.studio-status-card {
+  border: 1px solid #bed0ea;
+  border-radius: 10px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.studio-status-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 64px;
+  padding: 2px 10px;
+  border-radius: 999px;
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.studio-status-idle {
+  background: #5d708f;
+}
+
+.studio-status-running {
+  background: var(--studio-warn);
+}
+
+.studio-status-completed {
+  background: var(--studio-ok);
+}
+
+.studio-status-failed {
+  background: var(--studio-fail);
+}
+
+.studio-status-message {
+  margin: 10px 0 0;
+  font-size: 15px;
+}
+
+.studio-status-meta {
+  margin: 12px 0 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.studio-status-meta div {
+  background: #f4f8ff;
+  border: 1px solid #d6e2f4;
+  border-radius: 8px;
+  padding: 6px 8px;
+}
+
+.studio-status-meta dt {
+  margin: 0;
+  font-size: 12px;
+  color: var(--studio-text-muted);
+}
+
+.studio-status-meta dd {
+  margin: 3px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.studio-log-panel {
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 10px;
+  border: 1px solid #1e2f4d;
+  background: #14243c;
+  color: #e6efff;
+}
+
+.studio-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.studio-log-line {
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.studio-log-time {
+  color: #9fb6df;
+}
+
+.studio-log-warn {
+  color: #ffd980;
+}
+
+.studio-log-error {
+  color: #ffb0b0;
+}
+
+.studio-report-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.studio-report-card {
+  border: 1px solid #bed0ea;
+  border-radius: 10px;
+  padding: 10px;
+  background: #ffffff;
+}
+
+.studio-report-card h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.studio-report-meta {
+  margin: 8px 0;
+  font-size: 13px;
+  word-break: break-all;
+}
+
+.studio-inline-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.studio-tab-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.studio-tab-button {
+  border: 1px solid #a5bfe2;
+  border-radius: 8px;
+  padding: 6px 10px;
+  background: #ffffff;
+  color: #17345c;
+  cursor: pointer;
+}
+
+.studio-tab-button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.studio-tab-button.is-active {
+  background: #eaf2ff;
+  border-color: #8cafde;
+  font-weight: 600;
+}
+
+.studio-tab-panel {
+  margin-top: 10px;
+  border: 1px solid #d6e2f4;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 10px;
+}
+
+.studio-report-verdict {
+  margin: 0 0 10px;
+}
+
+.studio-stage-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.studio-stage-table th,
+.studio-stage-table td {
+  border: 1px solid #d6e2f4;
+  padding: 6px 8px;
+  text-align: left;
+}
+
+.studio-raw-block {
+  margin: 0;
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.studio-empty {
+  margin: 0;
+  color: var(--studio-text-muted);
+}
+
+@media (max-width: 960px) {
+  .studio-main {
+    padding: 8px;
+  }
+
+  .studio-title {
+    font-size: 24px;
+  }
+
+  .studio-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-panel-wide {
+    grid-column: auto;
+  }
+
+  .studio-status-meta {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .studio-report-cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.studio-monitor-main {
+  min-height: 100vh;
+  padding: 12px;
+  overflow: auto;
+}
+
+.studio-monitor-shell {
+  max-width: 1360px;
+  margin: 0 auto;
+  border: 1px solid var(--studio-border);
+  border-radius: 14px;
+  background: var(--studio-surface);
+  box-shadow: var(--studio-shadow);
+}
+
+.studio-monitor-header {
+  padding: 18px 20px;
+  border-bottom: 1px solid var(--studio-border);
+  background: var(--studio-header-bg);
+}
+
+.studio-monitor-header h1 {
+  margin: 0;
+  font-size: 30px;
+}
+
+.studio-monitor-header p {
+  margin: 8px 0 0;
+  color: var(--studio-text-muted);
+}
+
+.studio-config-card {
+  margin: 14px;
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  padding: 14px;
+  background: #fbfdff;
+}
+
+.studio-config-title {
+  margin: 0 0 10px;
+  font-size: 20px;
+  font-weight: 700;
+}
+
+.studio-config-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+.studio-config-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--studio-text-muted);
+}
+
+.studio-config-field input,
+.studio-config-field select {
+  width: 100%;
+  border: 1px solid #bed0ea;
+  border-radius: 8px;
+  padding: 9px 10px;
+  font: inherit;
+  color: #152d4f;
+  background: #ffffff;
+}
+
+.studio-config-field input:focus,
+.studio-config-field select:focus {
+  outline: 2px solid #a8c8f3;
+  outline-offset: 1px;
+}
+
+.studio-action-row {
+  margin-top: 12px;
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.studio-action-row button {
+  border: 1px solid #9eb8dc;
+  border-radius: 8px;
+  padding: 8px 12px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  background: #ffffff;
+}
+
+.studio-action-row button:first-child {
+  background: var(--studio-accent);
+  color: #ffffff;
+  border-color: var(--studio-accent);
+}
+
+.studio-action-row button:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.monitoring-panel {
+  margin: 0 14px 14px;
+  display: grid;
+  gap: 12px;
+}
+
+.monitoring-summary-card,
+.monitoring-stream-card,
+.monitoring-error-card {
+  border: 1px solid var(--studio-border);
+  border-radius: 12px;
+  padding: 12px;
+  background: #ffffff;
+}
+
+.monitoring-summary-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+}
+
+.monitoring-card-title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.monitoring-run-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  padding: 2px 10px;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.monitoring-run-pill-neutral {
+  color: #26435f;
+  background: #d6e5f8;
+}
+
+.monitoring-run-pill-success {
+  color: #ffffff;
+  background: var(--studio-ok);
+}
+
+.monitoring-run-pill-error {
+  color: #ffffff;
+  background: var(--studio-fail);
+}
+
+.monitoring-status-message {
+  margin: 8px 0;
+  font-size: 15px;
+}
+
+.monitoring-meta-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  color: var(--studio-text-muted);
+  font-size: 13px;
+}
+
+.monitoring-progress-track {
+  margin-top: 10px;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  background: #e8eef8;
+  overflow: hidden;
+}
+
+.monitoring-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #2080e0 0%, #43c99b 100%);
+  transition: width 220ms ease;
+}
+
+.monitoring-progress-caption {
+  margin: 6px 0 0;
+  color: var(--studio-text-muted);
+  font-size: 13px;
+}
+
+.monitoring-stage-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.monitoring-stage-card {
+  border: 1px solid #d4dff2;
+  border-radius: 10px;
+  padding: 8px;
+  background: #f9fbff;
+}
+
+.monitoring-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.monitoring-stage-pill {
+  border-radius: 999px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 700;
+  color: #ffffff;
+  text-transform: uppercase;
+}
+
+.monitoring-stage-pill-pending {
+  background: #7587a3;
+}
+
+.monitoring-stage-pill-running {
+  background: var(--studio-warn);
+}
+
+.monitoring-stage-pill-success {
+  background: var(--studio-ok);
+}
+
+.monitoring-stage-pill-failure {
+  background: var(--studio-fail);
+}
+
+.monitoring-stage-pill-skipped {
+  background: #49648f;
+}
+
+.monitoring-stage-meta {
+  margin: 6px 0 0;
+  color: #587195;
+  font-size: 12px;
+}
+
+.monitoring-error-card {
+  border-color: #efc6c6;
+  background: #fff8f8;
+}
+
+.monitoring-error-card pre {
+  margin: 8px 0 0;
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: #7f2323;
+}
+
+.monitoring-stream-grid {
+  display: grid;
+  grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr);
+  gap: 12px;
+}
+
+.monitoring-empty-message {
+  margin: 0;
+  color: var(--studio-text-muted);
+}
+
+.monitoring-timeline-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 10px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.monitoring-timeline-item {
+  display: flex;
+  gap: 8px;
+}
+
+.monitoring-dot {
+  width: 10px;
+  height: 10px;
+  margin-top: 5px;
+  border-radius: 999px;
+  flex: 0 0 auto;
+}
+
+.monitoring-dot-neutral {
+  background: #4a83c6;
+}
+
+.monitoring-dot-success {
+  background: var(--studio-ok);
+}
+
+.monitoring-dot-warning {
+  background: var(--studio-warn);
+}
+
+.monitoring-dot-error {
+  background: var(--studio-fail);
+}
+
+.monitoring-timeline-content {
+  min-width: 0;
+}
+
+.monitoring-timeline-title {
+  margin: 0;
+  font-weight: 700;
+}
+
+.monitoring-timeline-description {
+  margin: 2px 0 0;
+  color: #4c6387;
+  font-size: 13px;
+  word-break: break-word;
+}
+
+.monitoring-timeline-time {
+  margin: 2px 0 0;
+  color: #6982a8;
+  font-size: 12px;
+}
+
+.monitoring-log-list {
+  list-style: none;
+  margin: 0;
+  padding: 8px;
+  max-height: 360px;
+  overflow: auto;
+  border-radius: 10px;
+  background: #13273f;
+  color: #dbe9ff;
+  font-family: "Menlo", "Consolas", monospace;
+  font-size: 12px;
+  display: grid;
+  gap: 4px;
+}
+
+.monitoring-log-line {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.monitoring-log-time {
+  color: #8fb3e5;
+}
+
+.monitoring-log-level {
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.monitoring-log-level-info {
+  color: #7dd0ff;
+}
+
+.monitoring-log-level-warn {
+  color: #ffd980;
+}
+
+.monitoring-log-level-error {
+  color: #ffb0b0;
+}
+
+.monitoring-log-message {
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+
+.monitoring-log-line-warn .monitoring-log-message {
+  color: #ffe09b;
+}
+
+.monitoring-log-line-error .monitoring-log-message {
+  color: #ffbdbd;
+}
+
+@media (max-width: 1100px) {
+  .studio-config-grid {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+
+  .monitoring-stage-grid {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+}
+
+@media (max-width: 960px) {
+  .studio-monitor-main {
+    padding: 8px;
+  }
+
+  .studio-monitor-header h1 {
+    font-size: 24px;
+  }
+
+  .studio-config-card {
+    margin: 10px;
+  }
+
+  .studio-config-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitoring-panel {
+    margin: 0 10px 10px;
+  }
+
+  .monitoring-stage-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .monitoring-stream-grid {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
