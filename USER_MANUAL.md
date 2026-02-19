@@ -494,6 +494,28 @@ python3 scripts/run_r12_qa_gates.py
 npm run build
 ```
 
+### 5.1 데스크톱(PySide6) Preview Bridge 사용 (R13)
+
+R13 방향은 웹 GUI 확장이 아니라 Python 데스크톱 GUI 전환이며, 웹은 React 산출물 검증 용도로만 사용합니다.
+
+데스크톱 앱에서 `src/migrator/desktop_preview_bridge.py`의 `DesktopPreviewBridge`를 사용하면 다음 순서로 동작합니다.
+
+1. preview-host 경로 해석
+- 우선순위: `run_preview_host_dir` > `run_summary_file`(`stages.sync_preview.manifest_file`) > 기본 `preview-host`
+2. manifest 로드 및 `screenId` 검증
+- `<preview-host>/src/manifest/screens.manifest.json`에서 선택한 `screenId` 존재 여부 확인
+3. preview-host 프로세스 lifecycle 제어
+- start: `npm run dev -- --host <host> --port <port> --strictPort`
+- health-check: `GET /`
+- stop: 앱 종료 시 명시 정리
+4. 라우트 오픈
+- `http://<host>:<port>/preview/<screenId>`
+5. 렌더링 경로
+- 가능하면 embedded WebView(`PySide6.QtWebEngineWidgets`)
+- 불가능하면 외부 브라우저로 자동 fallback
+
+이 브리지는 샘플 하드코딩 없이 manifest 계약 기반으로만 `screenId`를 해석합니다.
+
 ## 6. 자주 발생하는 이슈
 
 ### 6.1 strict 파싱 실패
@@ -512,6 +534,15 @@ npm run build
 - `preview-smoke` 결과에서 `unresolved_module_count`가 0인지 확인
 - `screens.manifest.json`에 대상 `screenId`가 있는지 확인
 - `preview-host`에서 `npm install` 후 `npm run dev` 재실행
+
+### 6.4 Desktop Preview Bridge 실패 처리
+
+- `run_summary_file`에 `stages.sync_preview.manifest_file`가 없으면 경로 해석 실패
+- 선택한 `screenId`가 manifest에 없으면 `PreviewScreenSelectionError`
+- `node`/`npm` 미설치 또는 실행 실패 시 `PreviewHostProcessError`
+- health-check timeout이면 `PreviewHostStartTimeoutError`
+- Qt WebEngine 미사용 환경에서는 embedded 대신 외부 브라우저 fallback
+- 외부 브라우저 열기 실패 시 URL/기본 브라우저 설정 확인 필요
 
 ## 7. 권장 실행 체크리스트
 

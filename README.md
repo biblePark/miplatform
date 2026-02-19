@@ -22,6 +22,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - `/docs/PROJECT_CONTEXT.md`: Domain context, constraints, goals, and assumptions.
 - `/docs/TECH_SPEC.md`: Core architecture and validation design.
 - `/docs/ORCHESTRATOR_API.md`: Local asynchronous API contract for running migration jobs.
+- `/docs/DESKTOP_PREVIEW_BRIDGE.md`: Desktop-side preview-host bridge lifecycle and failure handling.
 - `/docs/CODE_STYLE.md`: Code and repository style standards.
 - `/docs/WORKTREE_RUNBOOK.md`: Multi-threaded round workflow with `git worktree`.
 - `/docs/multi-agent/README.md`: Templates and workflow for subagent coordination.
@@ -41,6 +42,7 @@ This repository is operated as a multi-threaded, round-based project using `git 
 - Round 7: One-command end-to-end migration orchestration with consolidated summary report.
 - Round 8: Runtime wiring contract + real-sample migrate-e2e regression automation with extraction/mapping/fidelity risk trend reporting.
 - Round 9: Deterministic XML-to-generated-UI fidelity audit module/report with strict audit gates and migrate-e2e integration.
+- Round 13 (desktop pivot in progress): Desktop preview bridge module for preview-host lifecycle and selected `screenId` route open.
 
 ## Quick Start
 
@@ -70,6 +72,21 @@ Run preview host studio UI (`/studio`, API proxied to `127.0.0.1:8765` by defaul
 ```bash
 cd preview-host
 npm run dev
+```
+
+Use desktop-side preview bridge API (PySide6 host integration):
+
+```python
+from migrator.desktop_preview_bridge import DesktopPreviewBridge
+
+bridge = DesktopPreviewBridge()
+result = bridge.open_screen_preview(
+    screen_id="orders",
+    run_summary_file="out/e2e/orders.migration-summary.json",
+    prefer_embedded=True,
+)
+print(result.url, result.mode)
+bridge.stop_preview_host()
 ```
 
 Run strict parse on one XML:
