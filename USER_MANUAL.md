@@ -389,8 +389,8 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 
 기본 UI 태그 매핑(현재 기준):
 
-- 컨테이너 계열: `Screen`, `Contents`, `Container`, `Window`, `Form`, `Div`, `Shape`, `Tab`, `TabPage`
-- 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`, `XChart`
+- 컨테이너 계열: `Screen`, `Contents`, `Container`, `Window`, `Form`, `Div`, `Shape`, `Tab`, `TabPage`, `Layout`, `PopupDiv`
+- 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `CalendarEx`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`, `XChart`
 - 비시각 메타 계열(`Dataset`, `colinfo`, `head`, `body`, `summary`, `cell`, `Script` 등)은 fallback 경고를 남기지 않고 trace 목적의 shell로만 반영
 
 Grid 렌더링 규칙(현재):

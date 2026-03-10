@@ -39,7 +39,20 @@ _COND_EQ_RE = re.compile(
     re.IGNORECASE,
 )
 _CONTAINER_TAGS = frozenset(
-    {"screen", "contents", "container", "window", "form", "div", "shape", "tab", "tabpage"}
+    {
+        "screen",
+        "contents",
+        "container",
+        "window",
+        "form",
+        "div",
+        "shape",
+        "tab",
+        "tabpage",
+        "layout",
+        "layouts",
+        "popupdiv",
+    }
 )
 _WIDGET_TAG_ALIASES = {
     "button": "button",
@@ -53,6 +66,7 @@ _WIDGET_TAG_ALIASES = {
     "radio": "radio",
     "checkbox": "checkbox",
     "calendar": "calendar",
+    "calendarex": "calendar",
     "spin": "spin",
     "treeview": "treeview",
     "webbrowser": "webbrowser",

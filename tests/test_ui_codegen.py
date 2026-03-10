@@ -836,6 +836,21 @@ class TestUiCodegen(unittest.TestCase):
                                                 children=[],
                                             ),
                                             AstNode(
+                                                tag="CalendarEx",
+                                                attributes={
+                                                    "id": "calEnd",
+                                                    "text": "End",
+                                                    "value": "2026-03-01",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/CalendarEx[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
                                                 tag="Spin",
                                                 attributes={"id": "spnQty", "text": "Qty", "value": "1"},
                                                 text=None,
@@ -886,6 +901,44 @@ class TestUiCodegen(unittest.TestCase):
                                                     line=8,
                                                 ),
                                                 children=[],
+                                            ),
+                                            AstNode(
+                                                tag="Layout",
+                                                attributes={"id": "lytMain"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Layout[1]",
+                                                    line=8,
+                                                ),
+                                                children=[
+                                                    AstNode(
+                                                        tag="PopupDiv",
+                                                        attributes={"id": "popDetails"},
+                                                        text=None,
+                                                        source=SourceRef(
+                                                            file_path="legacy.xml",
+                                                            node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Layout[1]/PopupDiv[1]",
+                                                            line=8,
+                                                        ),
+                                                        children=[
+                                                            AstNode(
+                                                                tag="Static",
+                                                                attributes={
+                                                                    "id": "staPopupTitle",
+                                                                    "text": "Popup Title",
+                                                                },
+                                                                text=None,
+                                                                source=SourceRef(
+                                                                    file_path="legacy.xml",
+                                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/Layout[1]/PopupDiv[1]/Static[1]",
+                                                                    line=8,
+                                                                ),
+                                                                children=[],
+                                                            ),
+                                                        ],
+                                                    ),
+                                                ],
                                             ),
                                             AstNode(
                                                 tag="Grid",
@@ -1053,10 +1106,13 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('className="mi-widget mi-widget-radio"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-checkbox"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-calendar"', tsx_text)
+            self.assertIn('defaultValue={"2026-03-01"}', tsx_text)
             self.assertIn('className="mi-widget mi-widget-spin"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-webbrowser"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-treeview"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-xchart"', tsx_text)
+            self.assertIn('className="mi-widget-shell mi-widget-shell-layout"', tsx_text)
+            self.assertIn('className="mi-widget-shell mi-widget-shell-popupdiv"', tsx_text)
             self.assertIn('component="img"', tsx_text)
             self.assertIn('src={"/assets/logo.png"}', tsx_text)
             self.assertIn('component="iframe"', tsx_text)
@@ -1088,6 +1144,9 @@ class TestUiCodegen(unittest.TestCase):
             self.assertNotIn("Unsupported tag: XChart", tsx_text)
             self.assertNotIn("Unsupported tag: _PersistData", tsx_text)
             self.assertNotIn("Unsupported tag: Script", tsx_text)
+            self.assertNotIn("Unsupported tag: CalendarEx", tsx_text)
+            self.assertNotIn("Unsupported tag: Layout", tsx_text)
+            self.assertNotIn("Unsupported tag: PopupDiv", tsx_text)
             self.assertEqual(report.warnings, [])
 
     def test_generate_ui_codegen_artifacts_wires_tab_page_switching_state(self) -> None:
