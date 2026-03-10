@@ -136,6 +136,51 @@ class TestRunnerService(unittest.TestCase):
             finally:
                 service.shutdown()
 
+    def test_isolated_preview_host_copy_when_target_dir_preexists(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_root = Path(tmp_dir)
+            source_preview_host = tmp_root / "source-preview-host"
+            source_preview_host.mkdir(parents=True)
+            (source_preview_host / "package.json").write_text(
+                '{"name":"preview-host","private":true}',
+                encoding="utf-8",
+            )
+            (source_preview_host / "src" / "manifest").mkdir(parents=True)
+            (source_preview_host / "src" / "manifest" / "screens.manifest.json").write_text(
+                '{"contractVersion":1,"screens":[]}',
+                encoding="utf-8",
+            )
+
+            target_preview_host = tmp_root / "target-preview-host"
+            target_preview_host.mkdir(parents=True)
+
+            service = RunnerService(
+                workspace_root=ROOT,
+                job_store_path=tmp_root / "jobs.json",
+                pipeline_runner=_write_success_summary,
+            )
+            try:
+                job = service.create_job(
+                    {
+                        "xml_path": str(FIXTURE_XML),
+                        "out_dir": str(tmp_root / "out"),
+                        "api_out_dir": str(tmp_root / "generated-api"),
+                        "ui_out_dir": str(tmp_root / "generated-ui"),
+                        "preview_host_dir": str(target_preview_host),
+                        "preview_host_source_dir": str(source_preview_host),
+                        "use_isolated_preview_host": True,
+                    }
+                )
+
+                terminal = self._wait_terminal(service, str(job["id"]))
+                self.assertEqual(terminal["status"], "succeeded")
+                self.assertTrue((target_preview_host / "package.json").exists())
+                self.assertTrue(
+                    (target_preview_host / "src" / "manifest" / "screens.manifest.json").exists()
+                )
+            finally:
+                service.shutdown()
+
 
 if __name__ == "__main__":
     unittest.main()

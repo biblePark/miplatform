@@ -202,6 +202,31 @@ class TestParser(unittest.TestCase):
         self.assertEqual(tx2.endpoint, "http://example.com/pos/Platform.jsp")
         self.assertEqual(tx2.method, "POST")
 
+    def test_parse_euc_kr_declared_xml_with_fallback_decoder(self) -> None:
+        xml_payload = (
+            "<?xml version='1.0' encoding='euc-kr'?>\n"
+            "<Screen id='도서관리'>\n"
+            "  <Contents>\n"
+            "    <Static id='stTitle' text='매출집계' />\n"
+            "  </Contents>\n"
+            "</Screen>\n"
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "euc_kr_sample.xml"
+            xml_file.write_bytes(xml_payload.encode("euc-kr"))
+            report = parse_xml_file(xml_file, config=ParseConfig(capture_text=True))
+
+        self.assertEqual(report.screen.root.attributes.get("id"), "도서관리")
+        contents = report.screen.root.children[0]
+        self.assertEqual(contents.tag, "Contents")
+        static = contents.children[0]
+        self.assertEqual(static.attributes.get("text"), "매출집계")
+        self.assertTrue(
+            any("fallback decoder" in warning for warning in report.warnings),
+            msg=f"warnings={report.warnings}",
+        )
+
 
 
 if __name__ == "__main__":

@@ -732,8 +732,11 @@ def run_preview_smoke(args: argparse.Namespace) -> int:
 
 def run_desktop_shell(args: argparse.Namespace) -> int:
     try:
-        desktop_module = __import__("migrator.desktop", fromlist=["launch_desktop_shell"])
-        launch_desktop_shell = getattr(desktop_module, "launch_desktop_shell")
+        desktop_module = __import__(
+            "migrator.desktop_filepicker",
+            fromlist=["launch_filepicker_batch_workflow"],
+        )
+        launch_workflow = getattr(desktop_module, "launch_filepicker_batch_workflow")
     except ImportError:
         print(
             "Desktop shell module is unavailable. "
@@ -741,7 +744,11 @@ def run_desktop_shell(args: argparse.Namespace) -> int:
             file=sys.stderr,
         )
         return 2
-    return int(launch_desktop_shell(exec_event_loop=not args.no_event_loop))
+    try:
+        return int(launch_workflow(exec_event_loop=not args.no_event_loop))
+    except RuntimeError as exc:
+        print(str(exc), file=sys.stderr)
+        return 2
 
 
 def run_migrate_e2e(args: argparse.Namespace) -> int:

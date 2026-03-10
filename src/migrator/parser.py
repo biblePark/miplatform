@@ -36,6 +36,97 @@ class ParseStrictError(RuntimeError):
 
 
 SCRIPT_TX_CALL_RE = re.compile(r"(?i)\btransaction\s*\(")
+_XML_DECL_ENCODING_RE = re.compile(
+    br"<\?xml[^>]*encoding\s*=\s*[\"']([^\"']+)[\"']",
+    re.IGNORECASE,
+)
+_XML_ENCODING_ALIASES = {
+    "utf8": "utf-8",
+    "unicode": "utf-16",
+    "euckr": "euc-kr",
+    "ks_c_5601-1987": "cp949",
+    "ks_c_5601-1989": "cp949",
+    "ksc5601": "cp949",
+    "x-windows-949": "cp949",
+    "windows-949": "cp949",
+    "cp-949": "cp949",
+}
+_XML_FALLBACK_CODECS: tuple[str, ...] = (
+    "utf-8-sig",
+    "utf-16",
+    "utf-16le",
+    "utf-16be",
+    "cp949",
+    "euc-kr",
+    "iso-8859-1",
+)
+
+
+def _normalize_xml_encoding_name(name: str) -> str:
+    token = name.strip().lower().replace("_", "-")
+    if not token:
+        return token
+    return _XML_ENCODING_ALIASES.get(token, token)
+
+
+def _extract_declared_xml_encoding(raw: bytes) -> str | None:
+    match = _XML_DECL_ENCODING_RE.search(raw[:512])
+    if not match:
+        return None
+    return match.group(1).decode("ascii", errors="ignore").strip() or None
+
+
+def _build_xml_decode_candidates(declared_encoding: str | None) -> list[str]:
+    candidates: list[str] = []
+
+    def add(codec: str | None) -> None:
+        if codec is None:
+            return
+        normalized = _normalize_xml_encoding_name(codec)
+        if normalized and normalized not in candidates:
+            candidates.append(normalized)
+
+    add(declared_encoding)
+    for fallback in _XML_FALLBACK_CODECS:
+        add(fallback)
+    return candidates
+
+
+def _parse_xml_tree(source_path: str) -> tuple[ET.ElementTree, str | None]:
+    try:
+        return ET.parse(source_path), None
+    except ET.ParseError as exc:
+        raise ParseStrictError(f"XML parse failure: {exc}") from exc
+    except ValueError as exc:
+        raw = Path(source_path).read_bytes()
+        declared_encoding = _extract_declared_xml_encoding(raw)
+        candidates = _build_xml_decode_candidates(declared_encoding)
+
+        for codec in candidates:
+            try:
+                text = raw.decode(codec)
+            except UnicodeDecodeError:
+                continue
+
+            try:
+                root = ET.fromstring(text)
+            except ET.ParseError:
+                continue
+
+            decode_note = (
+                f"XML parsed via fallback decoder '{codec}'"
+                f" (declared encoding: '{declared_encoding or 'unknown'}')."
+            )
+            return ET.ElementTree(root), decode_note
+
+        declared_note = (
+            f" declared encoding='{declared_encoding}'"
+            if declared_encoding is not None
+            else ""
+        )
+        raise ParseStrictError(
+            f"XML parse failure: {exc}.{declared_note}"
+        ) from exc
 
 
 def _extract_string_literal(value: str) -> str | None:
@@ -414,10 +505,7 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
     cfg = config or ParseConfig()
     source_path = str(Path(file_path).resolve())
 
-    try:
-        tree = ET.parse(source_path)
-    except ET.ParseError as exc:
-        raise ParseStrictError(f"XML parse failure: {exc}") from exc
+    tree, decode_note = _parse_xml_tree(source_path)
 
     root = tree.getroot()
     tag_counts: dict[str, int] = defaultdict(int)
@@ -598,6 +686,8 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
         )
     if canonical_mismatch:
         warnings.append(canonical_gate_message(False))
+    if decode_note is not None:
+        warnings.append(decode_note)
 
     if cfg.strict:
         failed = [gate for gate in gates if not gate.passed]

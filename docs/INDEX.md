@@ -15,6 +15,7 @@
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/multi-agent/SUBAGENT_HANDOFF_TEMPLATE.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/multi-agent/PM_MERGE_CHECKLIST.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/ROUND_HISTORY.md`
+- `/Users/biblepark/Desktop/works/miflatform-migrator/docs/rounds/R14_REFACTOR_MASTER_PLAN.md` (요구사항 1~7 기준 전면 점검/리팩토링 계획)
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/ROUND_TEMPLATE.md`
 - `/Users/biblepark/Desktop/works/miflatform-migrator/docs/DECISION_LOG.md`
 

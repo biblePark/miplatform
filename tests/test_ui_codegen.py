@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+import re
 import sys
 import tempfile
 import unittest
@@ -8,7 +9,15 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from migrator.models import AstNode, EventIR, ScreenIR, SourceRef  # noqa: E402
+from migrator.models import (  # noqa: E402
+    AstNode,
+    DatasetIR,
+    DatasetRecordIR,
+    EventIR,
+    ScreenIR,
+    ScriptBlockIR,
+    SourceRef,
+)
 from migrator.parser import parse_xml_file  # noqa: E402
 from migrator.ui_codegen import generate_ui_codegen_artifacts  # noqa: E402
 
@@ -108,6 +117,29 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('<div className="mi-widget-shell mi-widget-shell-button"', tsx_text)
             self.assertIn('<button className="mi-widget mi-widget-button"', tsx_text)
             self.assertIn('onClick={behaviorStore.onFnSearch}', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_reads_euc_kr_input_xml_for_script_scan(self) -> None:
+        xml_payload = """<?xml version='1.0' encoding='euc-kr'?>
+<Screen id='한글스크린'>
+  <Script>function fnOnLoad(){ var msg = '테스트'; }</Script>
+</Screen>
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "euc_kr_screen.xml"
+            xml_file.write_bytes(xml_payload.encode("euc-kr"))
+            parsed = parse_xml_file(xml_file)
+
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=parsed.screen,
+                input_xml_path=str(xml_file),
+                out_dir=out_dir,
+            )
+
+            tsx_path = Path(report.tsx_file)
+            self.assertTrue(tsx_path.exists())
+            tsx_text = tsx_path.read_text(encoding="utf-8")
+            self.assertIn("export default function EucKrScreen()", tsx_text)
 
     def test_generate_ui_codegen_artifacts_auto_mode_records_risk_decision(self) -> None:
         screen = ScreenIR(
@@ -423,8 +455,9 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn(
                 (
                     'style={{"color": "#1f2a44", "fontSize": "14px", "fontWeight": "600", '
-                    '"height": "32px", "left": "12px", "position": "absolute", '
-                    '"textAlign": "center", "top": "12px", "width": "260px"}}'
+                    '"height": "32px", "left": "12px", "lineHeight": "1", '
+                    '"overflow": "hidden", "position": "absolute", "textAlign": "center", '
+                    '"top": "12px", "whiteSpace": "pre", "width": "260px"}}'
                 ),
                 tsx_text,
             )
@@ -572,8 +605,9 @@ class TestUiCodegen(unittest.TestCase):
             )
             self.assertIn(
                 (
-                    'style={{"left": "24px", "position": "absolute", '
-                    '"right": "24px", "top": "160px"}}'
+                    'style={{"left": "24px", "lineHeight": "1", "overflow": "hidden", '
+                    '"position": "absolute", "right": "24px", "top": "160px", '
+                    '"whiteSpace": "pre"}}'
                 ),
                 tsx_text,
             )
@@ -839,6 +873,21 @@ class TestUiCodegen(unittest.TestCase):
                                                 children=[],
                                             ),
                                             AstNode(
+                                                tag="XChart",
+                                                attributes={
+                                                    "id": "chtOverview",
+                                                    "text": "Overview",
+                                                    "binddataset": "dsOrder",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="legacy.xml",
+                                                    node_path="/Screen[1]/Window[1]/Form[1]/Div[1]/XChart[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
                                                 tag="Grid",
                                                 attributes={
                                                     "id": "grdOrders",
@@ -964,6 +1013,17 @@ class TestUiCodegen(unittest.TestCase):
                         ],
                     ),
                     AstNode(
+                        tag="_PersistData",
+                        attributes={"id": "persist1"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="legacy.xml",
+                            node_path="/Screen[1]/_PersistData[1]",
+                            line=19,
+                        ),
+                        children=[],
+                    ),
+                    AstNode(
                         tag="Script",
                         attributes={},
                         text="function noop() {}",
@@ -996,20 +1056,28 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('className="mi-widget mi-widget-spin"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-webbrowser"', tsx_text)
             self.assertIn('className="mi-widget mi-widget-treeview"', tsx_text)
+            self.assertIn('className="mi-widget mi-widget-xchart"', tsx_text)
             self.assertIn('component="img"', tsx_text)
             self.assertIn('src={"/assets/logo.png"}', tsx_text)
             self.assertIn('component="iframe"', tsx_text)
             self.assertIn('src={"https://example.com"}', tsx_text)
             self.assertIn(
-                '<TableCell sx={{ whiteSpace: "nowrap" }}>{"Order No"}</TableCell>',
+                (
+                    '<TableCell sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", '
+                    'whiteSpace: "pre-line" }}>{"Order No"}</TableCell>'
+                ),
                 tsx_text,
             )
             self.assertIn(
-                '<TableCell sx={{ whiteSpace: "nowrap" }}>{"Status"}</TableCell>',
+                (
+                    '<TableCell sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", '
+                    'whiteSpace: "pre-line" }}>{"Status"}</TableCell>'
+                ),
                 tsx_text,
             )
             self.assertIn('data-mi-widget={"ignored"}', tsx_text)
             self.assertIn('className="mi-widget-shell mi-widget-shell-dataset"', tsx_text)
+            self.assertIn('className="mi-widget-shell mi-widget-shell-persistdata"', tsx_text)
             self.assertIn('style={{"display": "none"}}', tsx_text)
 
             self.assertNotIn('className="mi-widget mi-widget-fallback"', tsx_text)
@@ -1017,6 +1085,8 @@ class TestUiCodegen(unittest.TestCase):
             self.assertNotIn("Unsupported tag: Form", tsx_text)
             self.assertNotIn("Unsupported tag: TextArea", tsx_text)
             self.assertNotIn("Unsupported tag: Dataset", tsx_text)
+            self.assertNotIn("Unsupported tag: XChart", tsx_text)
+            self.assertNotIn("Unsupported tag: _PersistData", tsx_text)
             self.assertNotIn("Unsupported tag: Script", tsx_text)
             self.assertEqual(report.warnings, [])
 
@@ -1125,6 +1195,1325 @@ class TestUiCodegen(unittest.TestCase):
                 '{/* source file=tab.xml node=/Screen[1]/Tab[1]/Contents[1]/TabPage[2] line=5 */}',
                 tsx_text,
             )
+
+    def test_generate_ui_codegen_artifacts_wires_runtime_visibility_rules_from_scripts(
+        self,
+    ) -> None:
+        grid_primary_path = "/Screen[1]/Form[1]/Grid[1]"
+        grid_secondary_path = "/Screen[1]/Form[1]/Grid[2]"
+        screen = ScreenIR(
+            screen_id="Runtime Visibility Rules",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "RuntimeVisibilityRules"},
+                text=None,
+                source=SourceRef(file_path="rules.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Form",
+                        attributes={
+                            "id": "frmMain",
+                            "onloadcompleted": "frmMain_OnLoadCompleted",
+                        },
+                        text=None,
+                        source=SourceRef(
+                            file_path="rules.xml",
+                            node_path="/Screen[1]/Form[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Combo",
+                                attributes={
+                                    "id": "cbxMode",
+                                    "text": "Mode",
+                                    "onchanged": "cbxMode_OnChanged",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="rules.xml",
+                                    node_path="/Screen[1]/Form[1]/Combo[1]",
+                                    line=3,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Grid",
+                                attributes={
+                                    "id": "grdPrimary",
+                                    "left": "0",
+                                    "top": "0",
+                                    "width": "300",
+                                    "height": "200",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="rules.xml",
+                                    node_path=grid_primary_path,
+                                    line=4,
+                                ),
+                                children=[],
+                            ),
+                            AstNode(
+                                tag="Grid",
+                                attributes={
+                                    "id": "grdSecondary",
+                                    "left": "0",
+                                    "top": "0",
+                                    "width": "300",
+                                    "height": "200",
+                                },
+                                text=None,
+                                source=SourceRef(
+                                    file_path="rules.xml",
+                                    node_path=grid_secondary_path,
+                                    line=5,
+                                ),
+                                children=[],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="Form",
+                    node_id="frmMain",
+                    event_name="OnLoadCompleted",
+                    handler="frmMain_OnLoadCompleted",
+                    source=SourceRef(
+                        file_path="rules.xml",
+                        node_path="/Screen[1]/Form[1]",
+                        line=2,
+                    ),
+                ),
+                EventIR(
+                    node_tag="Combo",
+                    node_id="cbxMode",
+                    event_name="OnChanged",
+                    handler="cbxMode_OnChanged",
+                    source=SourceRef(
+                        file_path="rules.xml",
+                        node_path="/Screen[1]/Form[1]/Combo[1]",
+                        line=3,
+                    ),
+                ),
+            ],
+            scripts=[
+                ScriptBlockIR(
+                    node_tag="Script",
+                    node_id=None,
+                    script_name="scriptMain",
+                    body=(
+                        "function frmMain_OnLoadCompleted(obj){\n"
+                        "  frmMain.grdPrimary.Visible = true;\n"
+                        "  frmMain.grdSecondary.Visible = false;\n"
+                        "}\n"
+                        "function cbxMode_OnChanged(obj,strCode,strText,nOldIndex,nNewIndex){\n"
+                        '  if(nNewIndex == "0" || nNewIndex == "1") {\n'
+                        "    frmMain.grdPrimary.Visible = true;\n"
+                        "    frmMain.grdSecondary.Visible = false;\n"
+                        "  } else {\n"
+                        "    frmMain.grdPrimary.Visible = false;\n"
+                        "    frmMain.grdSecondary.Visible = true;\n"
+                        "  }\n"
+                        "}\n"
+                    ),
+                    source=SourceRef(
+                        file_path="rules.xml",
+                        node_path="/Screen[1]/Script[1]",
+                        line=20,
+                    ),
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="rules.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn(
+                "const [runtimeVisibilityState, setRuntimeVisibilityState] = "
+                "useState<Record<string, boolean>>",
+                tsx_text,
+            )
+            self.assertIn('"/Screen[1]/Form[1]/Grid[2]": false', tsx_text)
+            self.assertIn("const handleOnCbxModeOnChanged = (event: unknown): void => {", tsx_text)
+            self.assertIn(
+                "if ([\"0\", \"1\"].includes(runtimeSelectedIndex)) {",
+                tsx_text,
+            )
+            self.assertIn(
+                f'onChange={{handleOnCbxModeOnChanged}}',
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    '...(runtimeVisibilityState["'
+                    + grid_primary_path
+                    + '"] === false ? {"display": "none"} : {})'
+                ),
+                tsx_text,
+            )
+            self.assertIn(
+                (
+                    '...(runtimeVisibilityState["'
+                    + grid_secondary_path
+                    + '"] === false ? {"display": "none"} : {})'
+                ),
+                tsx_text,
+            )
+
+    def test_generate_ui_codegen_artifacts_renders_grid_head_spans_and_column_widths(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Span Layout",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridSpanLayout"},
+                text=None,
+                source=SourceRef(file_path="grid-span.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdSpan"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-span.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="columns",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-span.xml",
+                                    node_path="/Screen[1]/Grid[1]/columns[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "80"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-span.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[1]",
+                                            line=4,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "120"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-span.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[2]",
+                                            line=5,
+                                        ),
+                                        children=[],
+                                    ),
+                                ],
+                            ),
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-span.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=6,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-span.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=7,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "0",
+                                                    "col": "0",
+                                                    "colspan": "2",
+                                                    "text": "Summary",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-span.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "1",
+                                                    "col": "0",
+                                                    "text": "A",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-span.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "1",
+                                                    "col": "1",
+                                                    "text": "B",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-span.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[3]",
+                                                    line=10,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    )
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-span.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn("<colgroup>", tsx_text)
+            self.assertIn('<col style={{"width": "80px"}} />', tsx_text)
+            self.assertIn('<col style={{"width": "120px"}} />', tsx_text)
+            self.assertIn(
+                '<TableCell colSpan={2} sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"Summary"}</TableCell>',
+                tsx_text,
+            )
+            self.assertIn(
+                '<TableCell sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"A"}</TableCell>',
+                tsx_text,
+            )
+            self.assertIn(
+                '<TableCell sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"B"}</TableCell>',
+                tsx_text,
+            )
+
+    def test_generate_ui_codegen_artifacts_preserves_sparse_grid_header_rows_for_spans(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Sparse Header",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridSparseHeader"},
+                text=None,
+                source=SourceRef(file_path="grid-sparse.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdSparse"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-sparse.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="columns",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-sparse.xml",
+                                    node_path="/Screen[1]/Grid[1]/columns[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "80"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-sparse.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[1]",
+                                            line=4,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "120"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-sparse.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[2]",
+                                            line=5,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "120"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-sparse.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[3]",
+                                            line=6,
+                                        ),
+                                        children=[],
+                                    ),
+                                ],
+                            ),
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-sparse.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=7,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-sparse.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=8,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "0",
+                                                    "col": "0",
+                                                    "rowspan": "4",
+                                                    "text": "지부",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "0",
+                                                    "col": "1",
+                                                    "colspan": "2",
+                                                    "rowspan": "2",
+                                                    "text": "총계",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                    line=10,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "2",
+                                                    "col": "1",
+                                                    "rowspan": "2",
+                                                    "text": "회원수",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[3]",
+                                                    line=11,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "2",
+                                                    "col": "2",
+                                                    "rowspan": "2",
+                                                    "text": "변동",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[4]",
+                                                    line=12,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "4",
+                                                    "col": "0",
+                                                    "text": "합계",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[5]",
+                                                    line=13,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "4",
+                                                    "col": "1",
+                                                    "text": "건수",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-sparse.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[6]",
+                                                    line=14,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    )
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-sparse.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            head_start = tsx_text.index("<TableHead>")
+            head_end = tsx_text.index("</TableHead>", head_start)
+            head_fragment = tsx_text[head_start:head_end]
+
+            self.assertIn(
+                '<TableCell rowSpan={4} sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"지부"}</TableCell>',
+                head_fragment,
+            )
+            self.assertEqual(head_fragment.count("<TableRow>"), 5)
+            self.assertGreaterEqual(len(re.findall(r"<TableRow>\s*</TableRow>", head_fragment)), 2)
+            self.assertIn(
+                '<TableCell rowSpan={2} sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"회원수"}</TableCell>',
+                head_fragment,
+            )
+            self.assertIn(
+                '<TableCell sx={{ fontSize: "12px", lineHeight: 1.2, p: "2px 4px", whiteSpace: "pre-line" }}>{"합계"}</TableCell>',
+                head_fragment,
+            )
+
+    def test_generate_ui_codegen_artifacts_skips_hidden_grid_columns_and_scales_autofit_widths(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Hidden Columns AutoFit",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridHiddenColumnsAutoFit"},
+                text=None,
+                source=SourceRef(file_path="grid-hidden.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdHidden", "width": "200", "autofit": "TRUE"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-hidden.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="columns",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-hidden.xml",
+                                    node_path="/Screen[1]/Grid[1]/columns[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "0"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-hidden.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[1]",
+                                            line=4,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "100"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-hidden.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[2]",
+                                            line=5,
+                                        ),
+                                        children=[],
+                                    ),
+                                    AstNode(
+                                        tag="col",
+                                        attributes={"width": "150"},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-hidden.xml",
+                                            node_path="/Screen[1]/Grid[1]/columns[1]/col[3]",
+                                            line=6,
+                                        ),
+                                        children=[],
+                                    ),
+                                ],
+                            ),
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-hidden.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=7,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-hidden.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=8,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "text": "Hidden"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "text": "Dept"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                    line=10,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "2", "text": "Amount"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[3]",
+                                                    line=11,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="body",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-hidden.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/body[1]",
+                                            line=12,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "expr": "'H'"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[1]",
+                                                    line=13,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "expr": "'A'"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[2]",
+                                                    line=14,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "2", "expr": "'B'"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-hidden.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[3]",
+                                                    line=15,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            ),
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-hidden.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertNotIn('<col style={{"width": "0px"}} />', tsx_text)
+            self.assertIn('<col style={{"width": "80px"}} />', tsx_text)
+            self.assertIn('<col style={{"width": "120px"}} />', tsx_text)
+            self.assertNotIn('>{"Hidden"}</TableCell>', tsx_text)
+            self.assertIn('>{"Dept"}</TableCell>', tsx_text)
+            self.assertIn('>{"Amount"}</TableCell>', tsx_text)
+            self.assertNotIn('>{"H"}</TableCell>', tsx_text)
+            self.assertIn('>{"A"}</TableCell>', tsx_text)
+            self.assertIn('>{"B"}</TableCell>', tsx_text)
+
+            strict_report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-hidden.xml",
+                out_dir=out_dir / "strict",
+                mode="strict",
+            )
+            strict_text = Path(strict_report.tsx_file).read_text(encoding="utf-8")
+            self.assertNotIn('<col style={{"width": "0px"}} />', strict_text)
+            self.assertNotIn('>{"Hidden"}</th>', strict_text)
+
+    def test_generate_ui_codegen_artifacts_renders_image_placeholder_when_source_missing(self) -> None:
+        screen = ScreenIR(
+            screen_id="Image Placeholder",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "ImagePlaceholder"},
+                text=None,
+                source=SourceRef(file_path="image.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Image",
+                        attributes={"id": "imgTitle", "left": "10", "top": "10", "width": "100", "height": "24"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="image.xml",
+                            node_path="/Screen[1]/Image[1]",
+                            line=2,
+                        ),
+                        children=[],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="image.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('className="mi-widget mi-widget-image mi-widget-image-placeholder"', tsx_text)
+            self.assertNotIn('component="img"', tsx_text)
+            self.assertIn('>{"imgTitle"}</Box>', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_separates_head_body_summary_bands_for_grid(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Bands",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridBands"},
+                text=None,
+                source=SourceRef(file_path="grid-bands.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdBands"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-bands.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-bands.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-bands.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=4,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "text": "지부"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-bands.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=5,
+                                                ),
+                                                children=[],
+                                            )
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="body",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-bands.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/body[1]",
+                                            line=6,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "colid": "GTTEAMNM"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-bands.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[1]",
+                                                    line=7,
+                                                ),
+                                                children=[],
+                                            )
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="summary",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-bands.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/summary[1]",
+                                            line=8,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "text": "합계"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-bands.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/summary[1]/cell[1]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            )
+                                        ],
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-bands.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn("TableFooter", tsx_text)
+            self.assertIn("<TableHead>", tsx_text)
+            self.assertIn("<TableBody>", tsx_text)
+            self.assertIn("<TableFooter>", tsx_text)
+            self.assertIn('>{""}</TableCell>', tsx_text)
+            self.assertIn('>{"합계"}</TableCell>', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_evaluates_grid_expr_and_colid_from_dataset(self) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Expr Eval",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridExprEval"},
+                text=None,
+                source=SourceRef(file_path="grid-expr.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdExpr", "binddataset": "ds_expr"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-expr.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-expr.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-expr.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=4,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "text": "프로그램"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-expr.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=5,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "text": "합계"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-expr.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                    line=6,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="body",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-expr.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/body[1]",
+                                            line=7,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "expr": "substr(PGMNM,0,2)+'-'+substr(PGMNM,2)"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-expr.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[1]",
+                                                    line=8,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "expr": "TOT_PAY_AMT+TOT_REPAY_AMT"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-expr.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[2]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="summary",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-expr.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/summary[1]",
+                                            line=10,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={
+                                                    "row": "0",
+                                                    "col": "0",
+                                                    "colspan": "2",
+                                                    "expr": "SUM('TOT_PAY_AMT')+SUM('TOT_REPAY_AMT')",
+                                                },
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-expr.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/summary[1]/cell[1]",
+                                                    line=11,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+            datasets=[
+                DatasetIR(
+                    dataset_id="ds_expr",
+                    attributes={"id": "ds_expr"},
+                    records=[
+                        DatasetRecordIR(
+                            values={
+                                "PGMNM": "업무수납",
+                                "TOT_PAY_AMT": "100",
+                                "TOT_REPAY_AMT": "30",
+                            },
+                            source=SourceRef(
+                                file_path="grid-expr.xml",
+                                node_path="/Screen[1]/Dataset[1]/record[1]",
+                                line=20,
+                            ),
+                        ),
+                        DatasetRecordIR(
+                            values={
+                                "PGMNM": "업무환불",
+                                "TOT_PAY_AMT": "40",
+                                "TOT_REPAY_AMT": "10",
+                            },
+                            source=SourceRef(
+                                file_path="grid-expr.xml",
+                                node_path="/Screen[1]/Dataset[1]/record[2]",
+                                line=21,
+                            ),
+                        ),
+                    ],
+                    source=SourceRef(
+                        file_path="grid-expr.xml",
+                        node_path="/Screen[1]/Dataset[1]",
+                        line=19,
+                    ),
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-expr.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('>{"업무-수납"}</TableCell>', tsx_text)
+            self.assertIn('>{"업무-환불"}</TableCell>', tsx_text)
+            self.assertIn('>{"130"}</TableCell>', tsx_text)
+            self.assertIn('>{"50"}</TableCell>', tsx_text)
+            self.assertIn('>{"180"}</TableCell>', tsx_text)
+
+    def test_generate_ui_codegen_artifacts_supports_decode_iif_and_aggregate_grid_expr(
+        self,
+    ) -> None:
+        screen = ScreenIR(
+            screen_id="Grid Expr Functions",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "GridExprFunctions"},
+                text=None,
+                source=SourceRef(file_path="grid-fn.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdFn", "binddataset": "ds_fn"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="grid-fn.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="format",
+                                attributes={},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="grid-fn.xml",
+                                    node_path="/Screen[1]/Grid[1]/format[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="head",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-fn.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/head[1]",
+                                            line=4,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "text": "Decode"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[1]",
+                                                    line=5,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "text": "IIF"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[2]",
+                                                    line=6,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "2", "text": "Etc"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/head[1]/cell[3]",
+                                                    line=7,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="body",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-fn.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/body[1]",
+                                            line=8,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "expr": "decode(COLA,'A','Alpha','B','Beta','Other')"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[1]",
+                                                    line=9,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "expr": "iif(AMT>15,'H','L')"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[2]",
+                                                    line=10,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "2", "expr": "currow+1"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/body[1]/cell[3]",
+                                                    line=11,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                    AstNode(
+                                        tag="summary",
+                                        attributes={},
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="grid-fn.xml",
+                                            node_path="/Screen[1]/Grid[1]/format[1]/summary[1]",
+                                            line=12,
+                                        ),
+                                        children=[
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "0", "expr": "count('COLA')+'건'"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/summary[1]/cell[1]",
+                                                    line=13,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "1", "expr": "avg('AMT')"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/summary[1]/cell[2]",
+                                                    line=14,
+                                                ),
+                                                children=[],
+                                            ),
+                                            AstNode(
+                                                tag="cell",
+                                                attributes={"row": "0", "col": "2", "expr": "decode(NULL,NULL,'EMPTY','NO')+'-'+rowcount()"},
+                                                text=None,
+                                                source=SourceRef(
+                                                    file_path="grid-fn.xml",
+                                                    node_path="/Screen[1]/Grid[1]/format[1]/summary[1]/cell[3]",
+                                                    line=15,
+                                                ),
+                                                children=[],
+                                            ),
+                                        ],
+                                    ),
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+            datasets=[
+                DatasetIR(
+                    dataset_id="ds_fn",
+                    attributes={"id": "ds_fn"},
+                    records=[
+                        DatasetRecordIR(
+                            values={"COLA": "A", "AMT": "10"},
+                            source=SourceRef(
+                                file_path="grid-fn.xml",
+                                node_path="/Screen[1]/Dataset[1]/record[1]",
+                                line=20,
+                            ),
+                        ),
+                        DatasetRecordIR(
+                            values={"COLA": "B", "AMT": "20"},
+                            source=SourceRef(
+                                file_path="grid-fn.xml",
+                                node_path="/Screen[1]/Dataset[1]/record[2]",
+                                line=21,
+                            ),
+                        ),
+                    ],
+                    source=SourceRef(
+                        file_path="grid-fn.xml",
+                        node_path="/Screen[1]/Dataset[1]",
+                        line=19,
+                    ),
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="grid-fn.xml",
+                out_dir=out_dir,
+            )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('>{"Alpha"}</TableCell>', tsx_text)
+            self.assertIn('>{"Beta"}</TableCell>', tsx_text)
+            self.assertIn('>{"L"}</TableCell>', tsx_text)
+            self.assertIn('>{"H"}</TableCell>', tsx_text)
+            self.assertIn('>{"1"}</TableCell>', tsx_text)
+            self.assertIn('>{"2"}</TableCell>', tsx_text)
+            self.assertIn('>{"2건"}</TableCell>', tsx_text)
+            self.assertIn('>{"15"}</TableCell>', tsx_text)
+            self.assertIn('>{"EMPTY-2"}</TableCell>', tsx_text)
 
     def test_generate_ui_codegen_artifacts_wires_duplicate_safe_event_actions(self) -> None:
         screen = ScreenIR(

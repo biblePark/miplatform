@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 import socket
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -156,6 +157,158 @@ class TestPreviewHostProcessManager(unittest.TestCase):
             with self.assertRaises(PreviewHostStartTimeoutError):
                 manager.start()
             self.assertFalse(manager.is_running())
+
+    def test_start_bootstraps_npm_dependencies_when_vite_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            preview_host_dir = Path(tmp_dir)
+            (preview_host_dir / "package.json").write_text("{}", encoding="utf-8")
+            (preview_host_dir / "package-lock.json").write_text("{}", encoding="utf-8")
+
+            config = PreviewHostLaunchConfig(
+                preview_host_dir=str(preview_host_dir),
+                startup_timeout_seconds=0.4,
+                poll_interval_seconds=0.05,
+                start_command=(sys.executable, "-c", "import time; time.sleep(30)"),
+            )
+            manager = PreviewHostProcessManager(config)
+            with (
+                mock.patch("migrator.desktop_preview_bridge.shutil.which", return_value="/usr/bin/npm"),
+                mock.patch("migrator.desktop_preview_bridge.subprocess.run") as mocked_run,
+            ):
+                mocked_run.return_value = subprocess.CompletedProcess(
+                    args=["npm", "ci", "--no-audit", "--no-fund"],
+                    returncode=0,
+                )
+                manager._ensure_npm_tooling(preview_host_dir, log_file=preview_host_dir / ".mifl-preview-host.log")
+                mocked_run.assert_not_called()
+
+            config_npm_mode = PreviewHostLaunchConfig(
+                preview_host_dir=str(preview_host_dir),
+                startup_timeout_seconds=0.4,
+                poll_interval_seconds=0.05,
+            )
+            manager_npm_mode = PreviewHostProcessManager(config_npm_mode)
+            with (
+                mock.patch("migrator.desktop_preview_bridge.shutil.which", return_value="/usr/bin/npm"),
+                mock.patch("migrator.desktop_preview_bridge.subprocess.run") as mocked_run,
+                mock.patch(
+                    "migrator.desktop_preview_bridge._has_required_preview_deps",
+                    side_effect=[False, True],
+                ),
+            ):
+                mocked_run.return_value = subprocess.CompletedProcess(
+                    args=["npm", "ci", "--no-audit", "--no-fund"],
+                    returncode=0,
+                )
+                manager_npm_mode._ensure_npm_tooling(
+                    preview_host_dir,
+                    log_file=preview_host_dir / ".mifl-preview-host.log",
+                )
+                mocked_run.assert_called_once()
+                called_command = tuple(mocked_run.call_args.args[0])
+                self.assertEqual(called_command, ("npm", "ci", "--no-audit", "--no-fund"))
+
+    def test_start_links_parent_node_modules_for_sibling_generated_sources(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            preview_host_dir = Path(tmp_dir) / "item" / "preview-host"
+            preview_host_dir.mkdir(parents=True)
+            (preview_host_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "dependencies": {
+                            "@mui/material": "^7.0.0",
+                            "react": "^19.0.0",
+                        },
+                        "devDependencies": {"vite": "^6.0.0"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "@mui" / "material").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "@mui" / "material" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "react").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "react" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "vite").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "vite" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+
+            manager = PreviewHostProcessManager(PreviewHostLaunchConfig(preview_host_dir=str(preview_host_dir)))
+            manager._ensure_npm_tooling(
+                preview_host_dir,
+                log_file=preview_host_dir / ".mifl-preview-host.log",
+            )
+            linked_node_modules = preview_host_dir.parent / "node_modules"
+            self.assertTrue(linked_node_modules.exists() or linked_node_modules.is_symlink())
+
+    def test_start_repairs_broken_posix_vite_bin_copy(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            preview_host_dir = Path(tmp_dir) / "item" / "preview-host"
+            preview_host_dir.mkdir(parents=True)
+            (preview_host_dir / "package.json").write_text(
+                json.dumps(
+                    {
+                        "dependencies": {
+                            "@mui/material": "^7.0.0",
+                            "react": "^19.0.0",
+                        },
+                        "devDependencies": {"vite": "^6.0.0"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "@mui" / "material").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "@mui" / "material" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "react").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "react" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "vite" / "bin").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "vite" / "dist" / "node").mkdir(parents=True)
+            (preview_host_dir / "node_modules" / "vite" / "package.json").write_text(
+                "{}",
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "vite" / "bin" / "vite.js").write_text(
+                '#!/usr/bin/env node\nimport "../dist/node/cli.js";\n',
+                encoding="utf-8",
+            )
+            (preview_host_dir / "node_modules" / "vite" / "dist" / "node" / "cli.js").write_text(
+                "console.log('ok')\n",
+                encoding="utf-8",
+            )
+            broken_vite_bin = preview_host_dir / "node_modules" / ".bin" / "vite"
+            broken_vite_bin.parent.mkdir(parents=True, exist_ok=True)
+            broken_vite_bin.write_text(
+                '#!/usr/bin/env node\nimport "../dist/node/cli.js";\n',
+                encoding="utf-8",
+            )
+
+            manager = PreviewHostProcessManager(PreviewHostLaunchConfig(preview_host_dir=str(preview_host_dir)))
+            with mock.patch("migrator.desktop_preview_bridge.subprocess.run") as mocked_run:
+                manager._ensure_npm_tooling(
+                    preview_host_dir,
+                    log_file=preview_host_dir / ".mifl-preview-host.log",
+                )
+                mocked_run.assert_not_called()
+
+            repaired_vite_bin = preview_host_dir / "node_modules" / ".bin" / "vite"
+            self.assertTrue(repaired_vite_bin.is_symlink())
+            self.assertEqual(
+                repaired_vite_bin.resolve(),
+                (preview_host_dir / "node_modules" / "vite" / "bin" / "vite.js").resolve(),
+            )
 
 
 class TestDesktopPreviewBridge(unittest.TestCase):

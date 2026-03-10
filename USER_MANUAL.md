@@ -75,9 +75,17 @@ PYTHONPATH=src python3 -m migrator desktop-shell --no-event-loop
 - `Single XML`: XML 파일 picker
 - `Batch Folder`: 폴더 picker + `recursive`/`glob` 조건으로 실행 큐 구성
 3. 출력 폴더 picker로 run 산출물 루트 지정
-4. 실행 후 상태/로그 패널에서 단계별 결과 확인
-5. 필요 시 실패 건만 재시도 큐(실패 전용 배치 플랜) 생성
-6. 생성 결과 검증이 필요할 때만 웹 preview route(`/preview/<screenId>`)를 열어 React 렌더링 확인
+4. (선택) `Project key` 선택/입력
+5. 실행 후 상태/로그 패널에서 단계별 결과 확인
+6. 필요 시 실패 건만 재시도 큐(실패 전용 배치 플랜) 생성
+7. 생성 결과 검증이 필요할 때만 웹 preview route(`/preview/<screenId>`)를 열어 React 렌더링 확인
+
+`Project key` 입력 UX:
+
+- 기존 프로젝트가 있으면 드롭다운/자동완성으로 바로 선택할 수 있습니다.
+- 직전 실행 프로젝트(또는 최근 이력 프로젝트)가 기본값으로 우선 선택됩니다.
+- 필요하면 새 `Project key`를 직접 입력해 신규 프로젝트로 실행할 수 있습니다.
+- 비워두면 기본값으로 `Output root` 폴더명이 자동 적용됩니다.
 
 참고:
 
@@ -94,6 +102,33 @@ PYTHONPATH=src python3 -m migrator.desktop_app
 
 - `out/<...>/desktop-runs/<run_id>/batch-run-plan.json`
 - `out/<...>/desktop-runs/<run_id>/batch-run-summary.json`
+- `out/<...>/projects/<project_key>/project.json`
+- `out/<...>/projects/<project_key>/artifacts/frontend/...`
+- `out/<...>/projects/<project_key>/artifacts/api/...`
+- `out/<...>/projects/<project_key>/reports/project-consolidation/<run_id>.consolidation.json`
+- `out/<...>/projects/<project_key>/coverage-ledger.json`
+
+데스크톱 GUI 탭 구성(현재):
+
+- `Batch Run`: 파일/폴더 선택, 배치 플랜 생성, 실행/취소, 실패 재시도
+  - `Live Pipeline Monitor` 포함: 진행률 바, KPI(`total/running/succeeded/failed/canceled/retryable`), 큐 상태 테이블
+  - `Stage Status` 탭: 선택 행 기준 단계별 상태(`parse/map_api/gen_ui/fidelity_audit/sync_preview/preview_smoke`)
+  - `Log Stream` 탭: 실행 중 선택 행의 실시간 로그 tail
+  - `Contract JSON` 탭: 현재 plan/summary/runtime 계약 원문 확인
+- `History`: 이전 실행 이력(`batch-run-summary.json`) 조회/선택 로드
+  - `Project` 필터(`All/No project/개별 project_key`)로 실행 이력을 프로젝트 단위로 즉시 좁혀 조회
+  - 실행 개수/선택 실행 KPI 카드, 선택 실행 메타(`Run ID/Generated/Counts/Run Root`) 제공
+  - 우측 상세 패널에서 `Contract JSON`과 `Coverage Ledger` 탭 제공
+  - `Coverage Ledger` 탭에서 누적 KPI(unknown tag/attr, unsupported event/tag), UI 렌더 커버리지 바, run별 집계 테이블 확인
+- `Preview`: 실행 성공 후 `screenId` 선택 미리보기
+  - 대상 개수/총 `screenId`/마지막 오픈 모드 KPI 제공
+  - `Preview Controls`와 대형 `Embedded Preview` 캔버스를 분리해 검토 집중도 개선
+  - `Route/Preview Host/Manifest` 진단 정보와 URL/오류 로그를 우측 패널에서 확인
+
+`History`에서 과거 실행을 로드한 뒤에도 새 배치는 바로 다시 시작할 수 있습니다.
+
+- `Start New Batch` 버튼으로 현재 로드된 플랜/실행 상태를 초기화
+- 이후 `Generate Batch Plan`으로 새 입력 기준 플랜을 다시 생성
 
 ### 4.1 원커맨드 E2E 마이그레이션 (R07 권장)
 
@@ -355,8 +390,14 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 기본 UI 태그 매핑(현재 기준):
 
 - 컨테이너 계열: `Screen`, `Contents`, `Container`, `Window`, `Form`, `Div`, `Shape`, `Tab`, `TabPage`
-- 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`
-- 비시각 메타 계열(`Dataset`, `colinfo`, `cell`, `Script` 등)은 fallback 경고를 남기지 않고 trace 목적의 shell로만 반영
+- 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`, `XChart`
+- 비시각 메타 계열(`Dataset`, `colinfo`, `head`, `body`, `summary`, `cell`, `Script` 등)은 fallback 경고를 남기지 않고 trace 목적의 shell로만 반영
+
+Grid 렌더링 규칙(현재):
+
+- `head`/`body`/`summary` 밴드를 분리 렌더링
+- `head`는 `TableHead`, `body`는 `TableBody`, `summary`는 `TableFooter`로 생성
+- `row` 인덱스가 비연속(`0,2,4` 등)이어도 `rowspan/colspan` 병합을 유지하도록 sparse row를 보존
 
 ### 4.6.1 UI Fidelity 감사 리포트 생성 (R09)
 
@@ -418,6 +459,11 @@ PYTHONPATH=src python3 -m migrator sync-preview \
 - `preview-host/src/manifest/screens.manifest.json`
 - `preview-host/src/screens/registry.generated.ts`
 - `out/preview-sync-report.json`
+
+참고:
+
+- `sync-preview`는 preview-host 워크스페이스 루트 밖에 있는 generated screen 모듈을 자동 제외하고 경고를 남깁니다.
+- 임시 디렉터리(`/private/var/...`) 기반 모듈이 registry에 고정되어 preview-host build가 깨지는 드리프트를 방지하기 위한 안전장치입니다.
 
 ### 4.8 Preview Host Smoke 증거 생성 (R10)
 

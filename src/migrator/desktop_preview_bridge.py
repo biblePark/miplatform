@@ -4,6 +4,7 @@ from dataclasses import dataclass
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import time
 from typing import Callable, Literal, Protocol, TextIO
@@ -17,6 +18,71 @@ from .preview_manifest import (
     ScreensManifest,
     load_screens_manifest_file,
 )
+
+
+def _is_dependency_installed(node_modules_dir: Path, package_name: str) -> bool:
+    if not package_name.strip():
+        return False
+    package_path = node_modules_dir.joinpath(*package_name.split("/"))
+    return (package_path / "package.json").exists()
+
+
+def _has_required_preview_deps(preview_host_dir: Path) -> bool:
+    package_json_path = preview_host_dir / "package.json"
+    node_modules_dir = preview_host_dir / "node_modules"
+    if not package_json_path.exists() or not node_modules_dir.exists():
+        return False
+    try:
+        payload = json.loads(package_json_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(payload, dict):
+        return False
+    dependencies = payload.get("dependencies", {})
+    if isinstance(dependencies, dict):
+        for package_name in dependencies:
+            if not isinstance(package_name, str):
+                continue
+            if not _is_dependency_installed(node_modules_dir, package_name):
+                return False
+    return _is_dependency_installed(node_modules_dir, "vite")
+
+
+def _repair_posix_vite_bin(preview_host_dir: Path) -> bool:
+    if os.name == "nt":
+        return False
+    node_modules_dir = preview_host_dir / "node_modules"
+    vite_package_bin = node_modules_dir / "vite" / "bin" / "vite.js"
+    vite_cli = node_modules_dir / "vite" / "dist" / "node" / "cli.js"
+    vite_bin = node_modules_dir / ".bin" / "vite"
+    if not vite_package_bin.exists() or not vite_cli.exists():
+        return False
+
+    target_path = vite_package_bin.resolve()
+    if vite_bin.is_symlink():
+        try:
+            if vite_bin.resolve() == target_path:
+                return False
+        except OSError:
+            pass
+        try:
+            vite_bin.unlink()
+        except OSError:
+            return False
+    elif vite_bin.exists():
+        try:
+            vite_bin.unlink()
+        except OSError:
+            return False
+    else:
+        vite_bin.parent.mkdir(parents=True, exist_ok=True)
+
+    try:
+        rel_target = os.path.relpath(str(vite_package_bin), start=str(vite_bin.parent))
+        os.symlink(rel_target, vite_bin, target_is_directory=False)
+        return True
+    except OSError:
+        return False
 
 
 class PreviewBridgeError(RuntimeError):
@@ -161,6 +227,7 @@ class PreviewHostProcessManager:
         log_file = self.config.resolved_log_file()
         log_file.parent.mkdir(parents=True, exist_ok=True)
         self._log_handle = log_file.open("a", encoding="utf-8")
+        self._ensure_npm_tooling(preview_host_dir, log_file=log_file)
 
         try:
             self._process = self._popen_factory(
@@ -233,6 +300,79 @@ class PreviewHostProcessManager:
             self._log_handle.close()
         finally:
             self._log_handle = None
+
+    def _ensure_npm_tooling(self, preview_host_dir: Path, *, log_file: Path) -> None:
+        if self.config.start_command is not None:
+            return
+        if not (preview_host_dir / "package.json").exists():
+            return
+        if _has_required_preview_deps(preview_host_dir):
+            if _repair_posix_vite_bin(preview_host_dir) and self._log_handle is not None:
+                self._log_handle.write(
+                    "[preview-bootstrap] Repaired node_modules/.bin/vite symlink\n"
+                )
+                self._log_handle.flush()
+            self._ensure_parent_node_modules_link(preview_host_dir)
+            return
+
+        npm_executable = shutil.which("npm")
+        if npm_executable is None:
+            raise PreviewHostProcessError(
+                "npm executable was not found while preparing preview-host dependencies."
+            )
+
+        command: tuple[str, ...]
+        if (preview_host_dir / "package-lock.json").exists():
+            command = ("npm", "ci", "--no-audit", "--no-fund")
+        else:
+            command = ("npm", "install", "--no-audit", "--no-fund")
+
+        if self._log_handle is not None:
+            self._log_handle.write(
+                f"[preview-bootstrap] Running: {' '.join(command)}\n"
+            )
+            self._log_handle.flush()
+
+        result = subprocess.run(
+            command,
+            cwd=str(preview_host_dir),
+            stdout=self._log_handle,
+            stderr=self._log_handle,
+            text=True,
+            check=False,
+        )
+        if result.returncode != 0:
+            log_tail = _tail_text(log_file, line_limit=30)
+            detail = (
+                "Failed to install preview-host dependencies "
+                f"(exit={result.returncode}). Command: {' '.join(command)}"
+            )
+            if log_tail:
+                detail = f"{detail}\nRecent log tail:\n{log_tail}"
+            raise PreviewHostProcessError(detail)
+        if not _has_required_preview_deps(preview_host_dir):
+            raise PreviewHostProcessError(
+                "preview-host dependency bootstrap finished but required modules are still missing."
+            )
+        self._ensure_parent_node_modules_link(preview_host_dir)
+
+    def _ensure_parent_node_modules_link(self, preview_host_dir: Path) -> None:
+        node_modules_dir = preview_host_dir / "node_modules"
+        if not node_modules_dir.exists():
+            return
+        sibling_parent = preview_host_dir.parent
+        parent_link = sibling_parent / "node_modules"
+        if parent_link.exists() or parent_link.is_symlink():
+            return
+        try:
+            os.symlink(node_modules_dir, parent_link, target_is_directory=True)
+            if self._log_handle is not None:
+                self._log_handle.write(
+                    f"[preview-bootstrap] Linked {parent_link} -> {node_modules_dir}\n"
+                )
+                self._log_handle.flush()
+        except OSError:
+            return
 
 
 def load_preview_manifest(preview_host_dir: str | Path) -> ScreensManifest:

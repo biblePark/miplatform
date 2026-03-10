@@ -202,6 +202,67 @@ class TestPreviewSync(unittest.TestCase):
             )
             self.assertNotIn('import("', registry_text)
 
+    def test_sync_preview_host_skips_generated_modules_outside_preview_workspace(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            root = Path(tmp_dir)
+            workspace = root / "workspace"
+            external_root = root / "external-generated"
+            generated_dir = external_root / "frontend" / "src" / "screens"
+            preview_host_dir = workspace / "preview-host"
+            manifest_path = preview_host_dir / "src" / "manifest" / "screens.manifest.json"
+            registry_generated_path = preview_host_dir / "src" / "screens" / "registry.generated.ts"
+
+            generated_dir.mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "manifest").mkdir(parents=True, exist_ok=True)
+            (preview_host_dir / "src" / "screens").mkdir(parents=True, exist_ok=True)
+
+            (generated_dir / "External.tsx").write_text(
+                "export default function External() { return null; }\n",
+                encoding="utf-8",
+            )
+            manifest_path.write_text(
+                json.dumps(
+                    {
+                        "$schema": "./screens.manifest.schema.json",
+                        "schemaVersion": "1.0",
+                        "generatedAtUtc": "2026-02-11T00:00:00Z",
+                        "screens": [
+                            {
+                                "screenId": "simple_screen",
+                                "title": "Simple Screen (Placeholder)",
+                                "entryModule": "screens/placeholder/PlaceholderScreen",
+                                "sourceXmlPath": "tests/fixtures/simple_screen_fixture.txt",
+                                "sourceNodePath": "/Screen[1]",
+                            }
+                        ],
+                    }
+                ),
+                encoding="utf-8",
+            )
+
+            report = sync_preview_host(
+                generated_screens_dir=generated_dir,
+                preview_host_dir=preview_host_dir,
+            )
+
+            self.assertEqual(report.generated_screen_count, 0)
+            self.assertTrue(
+                any(
+                    warning.startswith(
+                        "Skipped generated screen module outside preview workspace root:"
+                    )
+                    for warning in report.warnings
+                )
+            )
+
+            manifest_payload = json.loads(manifest_path.read_text(encoding="utf-8"))
+            parsed_manifest = load_screens_manifest(manifest_payload)
+            self.assertEqual(len(parsed_manifest.screens), 1)
+            self.assertIsNotNone(parsed_manifest.find_screen("simple_screen"))
+
+            registry_text = registry_generated_path.read_text(encoding="utf-8")
+            self.assertNotIn("External", registry_text)
+
 
 if __name__ == "__main__":
     unittest.main()

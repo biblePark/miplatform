@@ -7,6 +7,7 @@ import io
 from pathlib import Path
 import sys
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -32,11 +33,11 @@ class TestDesktopLaunchContract(unittest.TestCase):
             fromlist: tuple[str, ...] = (),
             level: int = 0,
         ) -> object:
-            if name == "migrator.desktop":
+            if name == "migrator.desktop_filepicker":
                 raise ImportError("desktop module missing for contract smoke")
             return original_import(name, globals_dict, locals_dict, fromlist, level)
 
-        with unittest.mock.patch("builtins.__import__", side_effect=_mocked_import):
+        with mock.patch("builtins.__import__", side_effect=_mocked_import):
             with redirect_stderr(stderr):
                 rc = migrator_cli.run_desktop_shell(argparse.Namespace(no_event_loop=True))
 

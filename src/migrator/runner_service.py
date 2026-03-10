@@ -1199,14 +1199,19 @@ class RunnerService:
         source_raw = request.preview_host_source_dir
         if source_raw is None:
             return
-        source_dir = Path(source_raw)
-        target_dir = Path(request.preview_host_dir)
-        if target_dir.exists():
+        source_dir = Path(source_raw).resolve()
+        target_dir = Path(request.preview_host_dir).resolve()
+        if not source_dir.exists() or not source_dir.is_dir():
+            raise FileNotFoundError(f"Preview host source directory not found: {source_dir}")
+        if target_dir.exists() and not target_dir.is_dir():
+            raise NotADirectoryError(f"Preview host target path is not a directory: {target_dir}")
+        if (target_dir / "package.json").exists():
             return
         target_dir.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(
             source_dir,
             target_dir,
+            dirs_exist_ok=True,
             ignore=shutil.ignore_patterns(*PREVIEW_HOST_COPY_IGNORE_PATTERNS),
         )
 

@@ -140,12 +140,22 @@ def _build_generated_entries(
     registry_dir: Path,
     project_root: Path,
     reserved_screen_ids: set[str],
+    warnings: list[str],
 ) -> list[GeneratedScreenEntry]:
     screen_files = _list_generated_screen_files(generated_screens_dir)
     entries: list[GeneratedScreenEntry] = []
     used_ids = set(reserved_screen_ids)
 
     for module_file in screen_files:
+        try:
+            module_file.resolve().relative_to(project_root.resolve())
+        except ValueError:
+            warnings.append(
+                "Skipped generated screen module outside preview workspace root: "
+                f"{module_file.resolve()}"
+            )
+            continue
+
         module_token = _relative_posix(
             module_file.with_suffix(""),
             base=generated_screens_dir,
@@ -259,11 +269,14 @@ def sync_preview_host(
     schema_ref, preserved_entries = _load_preserved_screens(manifest_path)
     reserved_screen_ids = {entry.screen_id for entry in preserved_entries}
 
+    warnings: list[str] = []
+
     generated_entries = _build_generated_entries(
         generated_screens_dir=generated_dir,
         registry_dir=registry_generated_path.parent,
         project_root=host_dir.parent,
         reserved_screen_ids=reserved_screen_ids,
+        warnings=warnings,
     )
 
     generated_at_utc = datetime.now(UTC).isoformat().replace("+00:00", "Z")
@@ -303,7 +316,6 @@ def sync_preview_host(
         encoding="utf-8",
     )
 
-    warnings: list[str] = []
     if not generated_entries:
         warnings.append("No generated screen modules were found.")
 
