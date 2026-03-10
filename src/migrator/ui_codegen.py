@@ -803,10 +803,7 @@ def _build_node_style(node: AstNode, *, is_root: bool, widget_kind: str) -> dict
     if enabled is False:
         style["pointerEvents"] = "none"
 
-    if widget_kind == "ignored":
-        # Keep deterministic trace nodes in DOM for audit, but never surface them in preview UI.
-        style["display"] = "none"
-    elif widget_kind == "static":
+    if widget_kind == "static":
         style.setdefault("lineHeight", "1")
         style.setdefault("overflow", "hidden")
         style.setdefault("whiteSpace", "pre")
@@ -856,6 +853,18 @@ def _node_attrs_label(node: AstNode) -> str | None:
         for key, value in sorted(node.attributes.items(), key=lambda item: item[0].lower())
     ]
     return ", ".join(parts)
+
+
+def _ignored_trace_label(node: AstNode) -> str:
+    attrs_label = _node_attrs_label(node)
+    node_text = node.text.strip() if node.text and node.text.strip() else None
+    if attrs_label is not None and node_text is not None:
+        return f"{node.tag}: {node_text} ({attrs_label})"
+    if attrs_label is not None:
+        return f"{node.tag}: {attrs_label}"
+    if node_text is not None:
+        return f"{node.tag}: {node_text}"
+    return node.tag
 
 
 def _widget_kind(tag: str) -> str:
@@ -2575,8 +2584,19 @@ def _render_widget_body_mui(
         )
         return lines
 
-    if widget_kind in {"container", "ignored"}:
+    if widget_kind == "container":
         return []
+
+    if widget_kind == "ignored":
+        trace_label = _ignored_trace_label(node)
+        return [
+            (
+                f'{indent}<Box className="mi-widget mi-widget-ignored"'
+                f'{content_style} '
+                'sx={{ backgroundColor: "#f3f6fb", border: "1px dashed #b7c4da", boxSizing: "border-box", color: "#334562", fontFamily: "monospace", fontSize: "11px", lineHeight: 1.3, overflow: "hidden", p: "2px 4px", whiteSpace: "pre-wrap" }}>'
+                f"{_to_jsx_string(trace_label)}</Box>"
+            )
+        ]
 
     if widget_kind == "button":
         label = _node_display_text(node, fallback="Button")
@@ -2994,8 +3014,17 @@ def _render_widget_body_strict(
         lines.append(f"{indent}</div>")
         return lines
 
-    if widget_kind in {"container", "ignored"}:
+    if widget_kind == "container":
         return []
+
+    if widget_kind == "ignored":
+        trace_label = _ignored_trace_label(node)
+        return [
+            (
+                f'{indent}<div className="mi-widget mi-widget-ignored"'
+                f'{content_style}>{_to_jsx_string(trace_label)}</div>'
+            )
+        ]
 
     if widget_kind == "button":
         label = _node_display_text(node, fallback="Button")
