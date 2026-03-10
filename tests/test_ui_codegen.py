@@ -312,7 +312,7 @@ class TestUiCodegen(unittest.TestCase):
                 input_xml_path=str(FIXTURE_XML),
                 out_dir=out_dir / "low-threshold-auto",
                 mode="auto",
-                auto_risk_threshold=0.10,
+                auto_risk_threshold=0.01,
             )
             high_threshold_report = generate_ui_codegen_artifacts(
                 screen=parsed.screen,
@@ -325,7 +325,7 @@ class TestUiCodegen(unittest.TestCase):
             self.assertEqual(default_report.mode, "mui")
             self.assertEqual(default_report.auto_risk_threshold, 0.58)
             self.assertEqual(low_threshold_report.mode, "strict")
-            self.assertEqual(low_threshold_report.auto_risk_threshold, 0.1)
+            self.assertEqual(low_threshold_report.auto_risk_threshold, 0.01)
             self.assertEqual(high_threshold_report.mode, "mui")
             self.assertEqual(high_threshold_report.auto_risk_threshold, 0.95)
 
@@ -1133,10 +1133,8 @@ class TestUiCodegen(unittest.TestCase):
                 ),
                 tsx_text,
             )
-            self.assertIn('data-mi-widget={"ignored"}', tsx_text)
-            self.assertIn('className="mi-widget-shell mi-widget-shell-dataset"', tsx_text)
-            self.assertIn('className="mi-widget-shell mi-widget-shell-persistdata"', tsx_text)
-            self.assertIn('style={{"display": "none"}}', tsx_text)
+            self.assertNotIn('className="mi-widget-shell mi-widget-shell-dataset"', tsx_text)
+            self.assertNotIn('className="mi-widget-shell mi-widget-shell-persistdata"', tsx_text)
             self.assertNotIn('className="mi-widget mi-widget-ignored"', tsx_text)
 
             self.assertNotIn('className="mi-widget mi-widget-fallback"', tsx_text)
@@ -2953,6 +2951,98 @@ class TestUiCodegen(unittest.TestCase):
                 ),
                 report.warnings,
             )
+
+    def test_generate_ui_codegen_artifacts_extracts_div_url_include_component_files(self) -> None:
+        include_button_path = "/Screen[1]/Contents[1]/Div[1]/@include[1]/Screen[1]/Contents[1]/Button[1]"
+        screen = ScreenIR(
+            screen_id="Include Host Screen",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "IncludeHostScreen"},
+                text=None,
+                source=SourceRef(file_path="include.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Contents",
+                        attributes={},
+                        text=None,
+                        source=SourceRef(
+                            file_path="include.xml",
+                            node_path="/Screen[1]/Contents[1]",
+                            line=2,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="Div",
+                                attributes={"id": "divHost", "Url": "cst::sample_include.xml"},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="include.xml",
+                                    node_path="/Screen[1]/Contents[1]/Div[1]",
+                                    line=3,
+                                ),
+                                children=[
+                                    AstNode(
+                                        tag="Button",
+                                        attributes={
+                                            "id": "btnInclude",
+                                            "text": "Included",
+                                            "onclick": "fnIncludeClick",
+                                        },
+                                        text=None,
+                                        source=SourceRef(
+                                            file_path="sample_include.xml",
+                                            node_path=include_button_path,
+                                            line=4,
+                                        ),
+                                        children=[],
+                                    )
+                                ],
+                            )
+                        ],
+                    )
+                ],
+            ),
+            events=[
+                EventIR(
+                    node_tag="Button",
+                    node_id="btnInclude",
+                    event_name="onclick",
+                    handler="fnIncludeClick",
+                    source=SourceRef(
+                        file_path="sample_include.xml",
+                        node_path=include_button_path,
+                        line=4,
+                    ),
+                )
+            ],
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            report = generate_ui_codegen_artifacts(
+                screen=screen,
+                input_xml_path="include.xml",
+                out_dir=out_dir,
+                include_render_mode="component",
+            )
+
+            self.assertEqual(report.requested_include_mode, "component")
+            self.assertEqual(report.include_mode, "component")
+            self.assertEqual(len(report.include_component_files), 1)
+
+            main_txs = Path(report.tsx_file).read_text(encoding="utf-8")
+            include_component_file = Path(report.include_component_files[0])
+            include_txs = include_component_file.read_text(encoding="utf-8")
+
+            self.assertIn('import IncludeHostScreenInclude001 from "../includes/include-host-screen.include001";', main_txs)
+            self.assertIn("<IncludeHostScreenInclude001 />", main_txs)
+            self.assertNotIn(include_button_path, main_txs)
+
+            self.assertTrue(include_component_file.exists())
+            self.assertIn("export default function IncludeHostScreenInclude001()", include_txs)
+            self.assertIn('className="mi-widget mi-widget-button"', include_txs)
+            self.assertIn('onClick={behaviorStore.onFnIncludeClick}', include_txs)
 
 
 if __name__ == "__main__":

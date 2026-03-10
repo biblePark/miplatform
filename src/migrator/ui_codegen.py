@@ -80,6 +80,7 @@ _IGNORED_META_TAGS = frozenset(
         "dataset",
         "record",
         "colinfo",
+        "column",
         "col",
         "columns",
         "format",
@@ -90,6 +91,9 @@ _IGNORED_META_TAGS = frozenset(
         "cd",
         "data",
         "script",
+        "transaction",
+        "params",
+        "param",
         "httpfile",
         "filedialog",
         "file",
@@ -111,6 +115,7 @@ _HIDDEN_IGNORED_TRACE_TAGS = frozenset(
         "cell",
         "cd",
         "data",
+        "column",
     }
 )
 _IGNORED_TRACE_RENDER_ENV = "MIFL_UI_RENDER_IGNORED_TRACE"
@@ -248,6 +253,7 @@ _TEXT_ALIGN_ALIASES = {
     "middle": "center",
 }
 _RENDER_POLICY_MODES = frozenset({"strict", "mui", "auto"})
+_INCLUDE_RENDER_MODES = frozenset({"inline", "component", "auto"})
 _AUTO_RENDER_POLICY_RISK_THRESHOLD = 0.58
 _AUTO_RENDER_POLICY_RISK_THRESHOLD_ENV = "MIFL_UI_AUTO_RISK_THRESHOLD"
 _SCRIPT_XML_FALLBACK_CODECS: tuple[str, ...] = (
@@ -259,6 +265,8 @@ _SCRIPT_XML_FALLBACK_CODECS: tuple[str, ...] = (
 
 UiRenderPolicyMode = Literal["strict", "mui", "auto"]
 UiRenderMode = Literal["strict", "mui"]
+IncludeRenderPolicyMode = Literal["inline", "component", "auto"]
+IncludeRenderMode = Literal["inline", "component"]
 
 
 @dataclass(slots=True)
@@ -301,6 +309,9 @@ class UiCodegenReport:
     auto_risk_threshold: float
     risk_signal_counts: dict[str, int]
     risk_signal_scores: dict[str, float]
+    requested_include_mode: IncludeRenderPolicyMode
+    include_mode: IncludeRenderMode
+    include_component_files: list[str] = field(default_factory=list)
     unsupported_event_inventory: list[UnsupportedUiEventBinding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
     generated_at_utc: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
@@ -400,6 +411,23 @@ class _RenderPolicyDecision:
     auto_risk_threshold: float
     risk_signal_counts: dict[str, int]
     risk_signal_scores: dict[str, float]
+
+
+@dataclass(slots=True)
+class _IncludeRenderDecision:
+    requested_mode: IncludeRenderPolicyMode
+    resolved_mode: IncludeRenderMode
+    decision_reason: str
+
+
+@dataclass(slots=True)
+class _IncludeComponentSpec:
+    host_node_path: str
+    component_name: str
+    file_path: Path
+    import_module: str
+    include_child_paths: set[str]
+    include_children: list[AstNode]
 
 
 def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
@@ -2467,6 +2495,148 @@ def _resolve_render_policy(
     )
 
 
+def _normalize_include_render_mode(mode: str) -> IncludeRenderPolicyMode:
+    token = mode.strip().lower()
+    if token == "inline":
+        return "inline"
+    if token == "component":
+        return "component"
+    if token == "auto":
+        return "auto"
+    raise ValueError(
+        f"Unsupported include render mode '{mode}'. Expected one of: {sorted(_INCLUDE_RENDER_MODES)}"
+    )
+
+
+def _looks_like_xml_include_url(raw: str | None) -> bool:
+    if raw is None:
+        return False
+    token = raw.strip().lower()
+    if not token:
+        return False
+    if "::" in token:
+        return True
+    return token.endswith(".xml")
+
+
+def _is_include_host_node(node: AstNode) -> bool:
+    tag_lower = node.tag.lower()
+    if tag_lower not in {"div", "popupdiv"}:
+        return False
+    return _looks_like_xml_include_url(
+        _attr_lookup(node.attributes, "url") or _attr_lookup(node.attributes, "src")
+    )
+
+
+def _is_include_child_for_host(*, host_node: AstNode, child_node: AstNode) -> bool:
+    include_prefix = f"{host_node.source.node_path}/@include["
+    return child_node.source.node_path.startswith(include_prefix)
+
+
+def _resolve_include_render_mode(
+    *,
+    screen: ScreenIR,
+    requested_mode: str,
+) -> _IncludeRenderDecision:
+    normalized_mode = _normalize_include_render_mode(requested_mode)
+    include_host_count = 0
+
+    stack: list[AstNode] = [screen.root]
+    while stack:
+        current = stack.pop()
+        if _is_include_host_node(current):
+            include_host_count += 1
+        stack.extend(reversed(current.children))
+
+    snapshot = f"include_hosts={include_host_count}"
+    if normalized_mode == "inline":
+        return _IncludeRenderDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="inline",
+            decision_reason=f"explicit_inline_mode ({snapshot})",
+        )
+    if normalized_mode == "component":
+        return _IncludeRenderDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="component",
+            decision_reason=f"explicit_component_mode ({snapshot})",
+        )
+    if include_host_count > 0:
+        return _IncludeRenderDecision(
+            requested_mode=normalized_mode,
+            resolved_mode="component",
+            decision_reason=f"auto_selected_component_include_mode ({snapshot})",
+        )
+    return _IncludeRenderDecision(
+        requested_mode=normalized_mode,
+        resolved_mode="inline",
+        decision_reason=f"auto_selected_inline_include_mode ({snapshot})",
+    )
+
+
+def _collect_include_component_specs(
+    *,
+    root: AstNode,
+    wiring_contract: RuntimeWiringContract,
+    out_root: Path,
+    include_mode: IncludeRenderMode,
+) -> dict[str, _IncludeComponentSpec]:
+    if include_mode != "component":
+        return {}
+
+    specs: dict[str, _IncludeComponentSpec] = {}
+    include_index = 0
+    stack: list[AstNode] = [root]
+    while stack:
+        node = stack.pop()
+        stack.extend(reversed(node.children))
+
+        if not _is_include_host_node(node):
+            continue
+
+        include_children = [
+            child for child in node.children if _is_include_child_for_host(host_node=node, child_node=child)
+        ]
+        if not include_children:
+            continue
+
+        include_index += 1
+        file_stem = f"{wiring_contract.screen_file_stem}.include{include_index:03d}"
+        component_name = f"{wiring_contract.screen_component_name}Include{include_index:03d}"
+        include_path = (out_root / "src" / "includes" / f"{file_stem}.tsx").resolve()
+        specs[node.source.node_path] = _IncludeComponentSpec(
+            host_node_path=node.source.node_path,
+            component_name=component_name,
+            file_path=include_path,
+            import_module=f"../includes/{file_stem}",
+            include_child_paths={child.source.node_path for child in include_children},
+            include_children=include_children,
+        )
+
+    return specs
+
+
+def _collect_referenced_include_components(
+    *,
+    include_nodes: list[AstNode],
+    include_component_lookup: dict[str, _IncludeComponentSpec],
+) -> list[_IncludeComponentSpec]:
+    referenced: list[_IncludeComponentSpec] = []
+    seen_component_names: set[str] = set()
+
+    stack = list(reversed(include_nodes))
+    while stack:
+        node = stack.pop()
+        spec = include_component_lookup.get(node.source.node_path)
+        if spec is not None and spec.component_name not in seen_component_names:
+            referenced.append(spec)
+            seen_component_names.add(spec.component_name)
+        stack.extend(reversed(node.children))
+
+    referenced.sort(key=lambda item: item.component_name)
+    return referenced
+
+
 def _trace_attributes(node: AstNode) -> list[str]:
     attrs = [
         f"data-mi-tag={_to_jsx_string(node.tag)}",
@@ -3437,6 +3607,7 @@ def _render_node(
     dataset_record_lookup: dict[str, list[dict[str, str]]],
     render_mode: UiRenderMode,
     runtime_visibility_plan: _RuntimeVisibilityCodegenPlan | None,
+    include_component_lookup: dict[str, _IncludeComponentSpec],
     is_root: bool = False,
 ) -> list[str]:
     block_indent = "  " * depth
@@ -3466,6 +3637,35 @@ def _render_node(
     widget_kind = _widget_kind(node.tag)
     if widget_kind == "fallback" and _should_ignore_fallback_node(node):
         widget_kind = "ignored"
+    include_spec = include_component_lookup.get(node.source.node_path)
+
+    if widget_kind == "ignored" and not _should_render_ignored_trace(node):
+        child_lines: list[str] = []
+        for child in node.children:
+            if include_spec is not None and child.source.node_path in include_spec.include_child_paths:
+                continue
+            child_lines.extend(
+                _render_node(
+                    child,
+                    depth=node_depth,
+                    warnings=warnings,
+                    unsupported_event_inventory=unsupported_event_inventory,
+                    event_wiring_stats=event_wiring_stats,
+                    event_action_lookup=event_action_lookup,
+                    behavior_store_var=behavior_store_var,
+                    tab_binding_lookup=tab_binding_lookup,
+                    tab_page_lookup=tab_page_lookup,
+                    dataset_record_lookup=dataset_record_lookup,
+                    render_mode=render_mode,
+                    runtime_visibility_plan=runtime_visibility_plan,
+                    include_component_lookup=include_component_lookup,
+                )
+            )
+        if include_spec is not None:
+            child_indent = "  " * (node_depth + 1)
+            child_lines.append(f"{child_indent}<{include_spec.component_name} />")
+        return [*conditional_prefix, *child_lines, *conditional_suffix]
+
     trace_attrs = _trace_attributes(node)
     if widget_kind == "fallback":
         trace_attrs.append(f"data-mi-fallback={_to_jsx_string('unsupported-tag')}")
@@ -3577,7 +3777,11 @@ def _render_node(
             dataset_record_lookup=dataset_record_lookup,
         )
     )
+    if include_spec is not None:
+        node_lines.append(f"{indent}  <{include_spec.component_name} />")
     for child in node.children:
+        if include_spec is not None and child.source.node_path in include_spec.include_child_paths:
+            continue
         node_lines.extend(
             _render_node(
                 child,
@@ -3592,6 +3796,7 @@ def _render_node(
                 dataset_record_lookup=dataset_record_lookup,
                 render_mode=render_mode,
                 runtime_visibility_plan=runtime_visibility_plan,
+                include_component_lookup=include_component_lookup,
             )
         )
     node_lines.append(f"{indent}</{shell_tag}>")
@@ -3616,6 +3821,7 @@ def _render_screen_component(
     event_wiring_stats: _EventWiringStats,
     event_action_lookup: dict[tuple[str, str, str], str],
     render_mode: UiRenderMode,
+    include_component_lookup: dict[str, _IncludeComponentSpec],
 ) -> str:
     root = screen.root
     dataset_record_lookup = _build_dataset_record_lookup(screen)
@@ -3658,6 +3864,10 @@ def _render_screen_component(
             f'from "{wiring_contract.behavior_store_import_from_screen}";'
         )
     )
+    for include_spec in sorted(include_component_lookup.values(), key=lambda item: item.component_name):
+        import_lines.append(
+            f'import {include_spec.component_name} from "{include_spec.import_module}";'
+        )
 
     lines = [
         "/* Generated by mifl-migrator gen-ui. */",
@@ -3741,12 +3951,176 @@ def _render_screen_component(
             dataset_record_lookup=dataset_record_lookup,
             render_mode=render_mode,
             runtime_visibility_plan=runtime_visibility_plan,
+            include_component_lookup=include_component_lookup,
             is_root=True,
         )
     )
     lines.extend(
         [
             "    </section>",
+            "  );",
+            "}",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _render_include_component(
+    spec: _IncludeComponentSpec,
+    *,
+    screen: ScreenIR,
+    input_xml_path: str,
+    event_action_bindings: list[BehaviorEventActionBinding],
+    wiring_contract: RuntimeWiringContract,
+    warnings: list[str],
+    unsupported_event_inventory: list[UnsupportedUiEventBinding],
+    event_wiring_stats: _EventWiringStats,
+    event_action_lookup: dict[tuple[str, str, str], str],
+    render_mode: UiRenderMode,
+    include_component_lookup: dict[str, _IncludeComponentSpec],
+) -> str:
+    synthetic_root = AstNode(
+        tag="Screen",
+        attributes={},
+        text=None,
+        source=SourceRef(
+            file_path=spec.file_path.name,
+            node_path=f"/IncludeRoot[{spec.component_name}]",
+            line=None,
+        ),
+        children=spec.include_children,
+    )
+    dataset_record_lookup = _build_dataset_record_lookup(screen)
+    tab_bindings, tab_binding_lookup, tab_page_lookup = _collect_tab_bindings(synthetic_root)
+    runtime_visibility_plan = _build_runtime_visibility_codegen_plan(
+        screen=screen,
+        input_xml_path=input_xml_path,
+        event_action_bindings=event_action_bindings,
+    )
+    has_grid_summary_band = _screen_has_grid_summary_band(synthetic_root)
+    behavior_store_var = "behaviorStore"
+    react_import = (
+        'import { useState, type JSX } from "react";'
+        if tab_bindings or runtime_visibility_plan is not None
+        else 'import type { JSX } from "react";'
+    )
+    import_lines = [react_import]
+    if render_mode == "mui":
+        mui_import_tokens = [
+            "Box",
+            "Table",
+            "TableBody",
+            "TableCell",
+            "TableContainer",
+            "TableFooter",
+            "TableHead",
+            "TableRow",
+            "Typography",
+        ]
+        if not has_grid_summary_band:
+            mui_import_tokens.remove("TableFooter")
+        if tab_bindings:
+            mui_import_tokens.extend(["Tab as MuiTab", "Tabs"])
+        import_lines.append(f'import {{ {", ".join(mui_import_tokens)} }} from "@mui/material";')
+    import_lines.append(
+        (
+            f'import {{ {wiring_contract.behavior_store_hook_name} }} '
+            f'from "{wiring_contract.behavior_store_import_from_screen}";'
+        )
+    )
+    nested_import_specs = _collect_referenced_include_components(
+        include_nodes=spec.include_children,
+        include_component_lookup=include_component_lookup,
+    )
+    for nested_spec in nested_import_specs:
+        if nested_spec.component_name == spec.component_name:
+            continue
+        import_lines.append(
+            f'import {nested_spec.component_name} from "{nested_spec.import_module}";'
+        )
+
+    lines = [
+        "/* Generated by mifl-migrator gen-ui include-component mode. */",
+        (
+            f"/* includeHostNodePath: "
+            f"{_escape_comment(spec.host_node_path)} */"
+        ),
+        "",
+        *import_lines,
+        "",
+        f"export default function {spec.component_name}(): JSX.Element {{",
+        f"  const {behavior_store_var} = {wiring_contract.behavior_store_hook_name}();",
+    ]
+    if tab_bindings:
+        lines.append("")
+        for tab_binding in tab_bindings:
+            lines.append(
+                f"  const [{tab_binding.state_var}, {tab_binding.set_state_var}] = useState<number>(0);"
+            )
+    if runtime_visibility_plan is not None:
+        initial_state_payload = {
+            key: runtime_visibility_plan.initial_state[key]
+            for key in sorted(runtime_visibility_plan.initial_state)
+        }
+        initial_state_json = json.dumps(initial_state_payload, ensure_ascii=False)
+        lines.extend(
+            [
+                "",
+                (
+                    f"  const [{runtime_visibility_plan.state_var}, "
+                    f"{runtime_visibility_plan.set_state_var}] = useState<Record<string, boolean>>("
+                    f"() => ({initial_state_json})"
+                    ");"
+                ),
+                (
+                    f"  const {runtime_visibility_plan.apply_patch_fn} = "
+                    "(patch: Record<string, boolean>): void => {"
+                ),
+                f"    {runtime_visibility_plan.set_state_var}((prev) => {{",
+                "      let changed = false;",
+                "      const next: Record<string, boolean> = { ...prev };",
+                "      for (const [nodePath, visible] of Object.entries(patch)) {",
+                "        if (next[nodePath] !== visible) {",
+                "          next[nodePath] = visible;",
+                "          changed = true;",
+                "        }",
+                "      }",
+                "      return changed ? next : prev;",
+                "    });",
+                "  };",
+                "",
+            ]
+        )
+        lines.extend(runtime_visibility_plan.function_lines)
+    lines.extend(
+        [
+            "",
+            "  return (",
+            "    <>",
+        ]
+    )
+    for child in spec.include_children:
+        lines.extend(
+            _render_node(
+                child,
+                depth=3,
+                warnings=warnings,
+                unsupported_event_inventory=unsupported_event_inventory,
+                event_wiring_stats=event_wiring_stats,
+                event_action_lookup=event_action_lookup,
+                behavior_store_var=behavior_store_var,
+                tab_binding_lookup=tab_binding_lookup,
+                tab_page_lookup=tab_page_lookup,
+                dataset_record_lookup=dataset_record_lookup,
+                render_mode=render_mode,
+                runtime_visibility_plan=runtime_visibility_plan,
+                include_component_lookup=include_component_lookup,
+            )
+        )
+    lines.extend(
+        [
+            "    </>",
             "  );",
             "}",
             "",
@@ -3762,12 +4136,17 @@ def generate_ui_codegen_artifacts(
     out_dir: str | Path,
     mode: UiRenderPolicyMode = "mui",
     auto_risk_threshold: float | None = None,
+    include_render_mode: IncludeRenderPolicyMode = "auto",
 ) -> UiCodegenReport:
     out_root = Path(out_dir).resolve()
     policy_decision = _resolve_render_policy(
         screen=screen,
         requested_mode=mode,
         auto_risk_threshold=auto_risk_threshold,
+    )
+    include_decision = _resolve_include_render_mode(
+        screen=screen,
+        requested_mode=include_render_mode,
     )
     wiring_contract = build_runtime_wiring_contract(screen.screen_id)
     tsx_path = out_root / "src" / "screens" / f"{wiring_contract.screen_file_stem}.tsx"
@@ -3782,6 +4161,35 @@ def generate_ui_codegen_artifacts(
     warnings: list[str] = []
     unsupported_event_inventory: list[UnsupportedUiEventBinding] = []
     event_wiring_stats = _EventWiringStats()
+    include_component_lookup = _collect_include_component_specs(
+        root=screen.root,
+        wiring_contract=wiring_contract,
+        out_root=out_root,
+        include_mode=include_decision.resolved_mode,
+    )
+    include_component_files: list[str] = []
+    event_action_lookup = _build_event_action_lookup(behavior_report.event_action_bindings)
+
+    for include_spec in sorted(include_component_lookup.values(), key=lambda item: item.component_name):
+        include_spec.file_path.parent.mkdir(parents=True, exist_ok=True)
+        include_spec.file_path.write_text(
+            _render_include_component(
+                include_spec,
+                screen=screen,
+                input_xml_path=input_xml_path,
+                event_action_bindings=behavior_report.event_action_bindings,
+                wiring_contract=wiring_contract,
+                warnings=warnings,
+                unsupported_event_inventory=unsupported_event_inventory,
+                event_wiring_stats=event_wiring_stats,
+                event_action_lookup=event_action_lookup,
+                render_mode=policy_decision.resolved_mode,
+                include_component_lookup=include_component_lookup,
+            ),
+            encoding="utf-8",
+        )
+        include_component_files.append(str(include_spec.file_path))
+
     tsx_path.write_text(
         _render_screen_component(
             screen,
@@ -3791,10 +4199,9 @@ def generate_ui_codegen_artifacts(
             warnings=warnings,
             unsupported_event_inventory=unsupported_event_inventory,
             event_wiring_stats=event_wiring_stats,
-            event_action_lookup=_build_event_action_lookup(
-                behavior_report.event_action_bindings
-            ),
+            event_action_lookup=event_action_lookup,
             render_mode=policy_decision.resolved_mode,
+            include_component_lookup=include_component_lookup,
         ),
         encoding="utf-8",
     )
@@ -3826,12 +4233,17 @@ def generate_ui_codegen_artifacts(
         auto_risk_threshold=policy_decision.auto_risk_threshold,
         risk_signal_counts=policy_decision.risk_signal_counts,
         risk_signal_scores=policy_decision.risk_signal_scores,
+        requested_include_mode=include_decision.requested_mode,
+        include_mode=include_decision.resolved_mode,
+        include_component_files=include_component_files,
         unsupported_event_inventory=unsupported_event_inventory,
         warnings=warnings,
     )
 
 
 __all__ = [
+    "IncludeRenderMode",
+    "IncludeRenderPolicyMode",
     "UnsupportedUiEventBinding",
     "UiCodegenReport",
     "UiCodegenSummary",

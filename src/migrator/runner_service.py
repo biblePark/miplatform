@@ -12,7 +12,7 @@ import threading
 from typing import Any, Literal
 from uuid import uuid4
 
-from .cli import UI_RENDER_POLICY_MODE_CHOICES, run_migrate_e2e
+from .cli import INCLUDE_RENDER_MODE_CHOICES, UI_RENDER_POLICY_MODE_CHOICES, run_migrate_e2e
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "canceled"]
 
@@ -111,6 +111,7 @@ class OrchestratorJobRequest:
     roundtrip_mismatch_limit: int
     render_policy_mode: str
     auto_risk_threshold: float | None
+    include_render_mode: str
     pretty: bool
     use_isolated_preview_host: bool
     preview_host_source_dir: str | None
@@ -138,6 +139,7 @@ class OrchestratorJobRequest:
             roundtrip_mismatch_limit=self.roundtrip_mismatch_limit,
             render_policy_mode=self.render_policy_mode,
             auto_risk_threshold=self.auto_risk_threshold,
+            include_render_mode=self.include_render_mode,
             pretty=self.pretty,
         )
 
@@ -164,6 +166,7 @@ class OrchestratorJobRequest:
             "roundtrip_mismatch_limit": self.roundtrip_mismatch_limit,
             "render_policy_mode": self.render_policy_mode,
             "auto_risk_threshold": self.auto_risk_threshold,
+            "include_render_mode": self.include_render_mode,
             "pretty": self.pretty,
             "use_isolated_preview_host": self.use_isolated_preview_host,
             "preview_host_source_dir": self.preview_host_source_dir,
@@ -635,6 +638,12 @@ class RunnerService:
             default="mui",
         )
         auto_risk_threshold = self._optional_unit_interval(payload, "auto_risk_threshold")
+        include_render_mode = self._optional_choice_string(
+            payload,
+            "include_render_mode",
+            choices=INCLUDE_RENDER_MODE_CHOICES,
+            default="auto",
+        )
 
         summary_out = self._optional_path(payload, "summary_out")
         parse_report_out = self._optional_path(payload, "parse_report_out")
@@ -667,6 +676,7 @@ class RunnerService:
             roundtrip_mismatch_limit=roundtrip_mismatch_limit,
             render_policy_mode=render_policy_mode,
             auto_risk_threshold=auto_risk_threshold,
+            include_render_mode=include_render_mode,
             pretty=pretty,
             use_isolated_preview_host=use_isolated_preview_host,
             preview_host_source_dir=preview_host_source_dir,
@@ -893,6 +903,7 @@ class RunnerService:
 
         request_payload = dict(request_raw)
         request_payload.setdefault("auto_risk_threshold", None)
+        request_payload.setdefault("include_render_mode", "auto")
 
         try:
             request = OrchestratorJobRequest(**request_payload)

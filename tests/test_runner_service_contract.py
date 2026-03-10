@@ -116,6 +116,7 @@ class TestRunnerServiceContract(unittest.TestCase):
             roundtrip_mismatch_limit=200,
             render_policy_mode="auto",
             auto_risk_threshold=0.2,
+            include_render_mode="component",
             pretty=True,
             use_isolated_preview_host=True,
             preview_host_source_dir=str(ROOT / "preview-host"),
@@ -127,11 +128,13 @@ class TestRunnerServiceContract(unittest.TestCase):
         self.assertEqual(namespace.preview_host_dir, request.preview_host_dir)
         self.assertEqual(namespace.render_policy_mode, "auto")
         self.assertEqual(namespace.auto_risk_threshold, 0.2)
+        self.assertEqual(namespace.include_render_mode, "component")
 
         public = request.to_public_dict()
         self.assertTrue(public["use_isolated_preview_host"])
         self.assertEqual(public["preview_host_source_dir"], str(ROOT / "preview-host"))
         self.assertEqual(public["roundtrip_mismatch_limit"], 200)
+        self.assertEqual(public["include_render_mode"], "component")
 
     def test_service_executes_job_and_surfaces_preview_stage_artifacts(self) -> None:
         with tempfile.TemporaryDirectory() as tmp_dir:

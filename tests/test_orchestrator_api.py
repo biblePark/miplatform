@@ -27,6 +27,8 @@ KNOWN_ATTRS = FIXTURES_DIR / "known_attrs_all.json"
 def _run_migrate_e2e_with_default_auto_threshold(args: object) -> int:
     if not hasattr(args, "auto_risk_threshold"):
         setattr(args, "auto_risk_threshold", None)
+    if not hasattr(args, "include_render_mode"):
+        setattr(args, "include_render_mode", "auto")
     return run_migrate_e2e_cli(args)  # type: ignore[arg-type]
 
 

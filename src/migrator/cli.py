@@ -31,6 +31,7 @@ MIGRATE_E2E_COMMAND_NAME = "migrate-e2e"
 PROTOTYPE_ACCEPT_COMMAND_NAME = "prototype-accept"
 DESKTOP_SHELL_COMMAND_NAME = "desktop-shell"
 UI_RENDER_POLICY_MODE_CHOICES = ("strict", "mui", "auto")
+INCLUDE_RENDER_MODE_CHOICES = ("inline", "component", "auto")
 
 
 def _load_known_tags(path: str | None) -> set[str] | None:
@@ -107,6 +108,15 @@ def _add_render_policy_mode_option(command: argparse.ArgumentParser) -> None:
         help=(
             "Optional risk threshold override for auto policy mode (0.0-1.0). "
             "When omitted, the built-in default or MIFL_UI_AUTO_RISK_THRESHOLD env value is used."
+        ),
+    )
+    command.add_argument(
+        "--include-render-mode",
+        choices=INCLUDE_RENDER_MODE_CHOICES,
+        default="auto",
+        help=(
+            "Include render mode for Div/PopupDiv Url XML embeds "
+            "(inline=flatten AST, component=extract imported include component, auto=component when include hosts exist)"
         ),
     )
 
@@ -635,6 +645,7 @@ def run_gen_ui(args: argparse.Namespace) -> int:
         out_dir=args.out_dir,
         mode=args.render_policy_mode,
         auto_risk_threshold=args.auto_risk_threshold,
+        include_render_mode=args.include_render_mode,
     )
     report_out = Path(args.report_out).resolve()
     _write_json_file(report_out, ui_report.to_dict(), pretty=args.pretty)
@@ -887,6 +898,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     out_dir=args.ui_out_dir,
                     mode=args.render_policy_mode,
                     auto_risk_threshold=args.auto_risk_threshold,
+                    include_render_mode=args.include_render_mode,
                 )
             except Exception as exc:  # pragma: no cover - defensive path
                 error_message = f"{type(exc).__name__}: {exc}"
@@ -904,6 +916,7 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                         ui_report.tsx_file,
                         ui_report.behavior_store_file,
                         ui_report.behavior_actions_file,
+                        *ui_report.include_component_files,
                     ]
                 )
                 stage_status["gen_ui"] = {
@@ -926,6 +939,9 @@ def run_migrate_e2e(args: argparse.Namespace) -> int:
                     "auto_risk_threshold": ui_report.auto_risk_threshold,
                     "risk_signal_counts": ui_report.risk_signal_counts,
                     "risk_signal_scores": ui_report.risk_signal_scores,
+                    "requested_include_mode": ui_report.requested_include_mode,
+                    "include_mode": ui_report.include_mode,
+                    "include_component_files": ui_report.include_component_files,
                 }
                 warnings.extend(f"gen_ui: {message}" for message in ui_report.warnings)
 

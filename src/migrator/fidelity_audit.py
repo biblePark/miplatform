@@ -15,6 +15,34 @@ _FALSE_ATTR_VALUES = frozenset({"false", "0", "off", "no", "n"})
 _TRUE_ATTR_VALUES = frozenset({"true", "1", "on", "yes", "y"})
 _STYLE_PROP_RE = re.compile(r"style=\{\{(?P<payload>.*?)\}\}")
 _WIDGET_LINE_TOKEN = '<Box className="mi-widget-shell'
+_NON_RENDERED_SOURCE_TAGS = frozenset(
+    {
+        "datasets",
+        "dataset",
+        "record",
+        "colinfo",
+        "column",
+        "col",
+        "columns",
+        "format",
+        "head",
+        "body",
+        "summary",
+        "cell",
+        "cd",
+        "data",
+        "script",
+        "transaction",
+        "params",
+        "param",
+        "httpfile",
+        "filedialog",
+        "file",
+        "cylastinput",
+        "persistdata",
+        "_persistdata",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -188,6 +216,16 @@ def _iter_nodes(root: AstNode):
         yield from _iter_nodes(child)
 
 
+def _should_skip_source_node(node: AstNode) -> bool:
+    tag_lower = node.tag.lower()
+    if tag_lower in _NON_RENDERED_SOURCE_TAGS:
+        return True
+    path_lower = node.source.node_path.lower()
+    if "/record[" in path_lower or "/data[" in path_lower or "/cd[" in path_lower:
+        return True
+    return False
+
+
 def _coverage_ratio(*, covered: int, total: int) -> float:
     if total <= 0:
         return 1.0
@@ -303,6 +341,8 @@ def _collect_source_inventory(
     coverage_by_path: dict[str, _SourceCoverageNode] = {}
 
     for node in _iter_nodes(root):
+        if _should_skip_source_node(node):
+            continue
         expected_position, expected_style = _expected_attr_coverage(node)
         source_inventory.append(
             FidelitySourceNodeInventory(
