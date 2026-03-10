@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import re
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
@@ -1134,12 +1136,8 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('data-mi-widget={"ignored"}', tsx_text)
             self.assertIn('className="mi-widget-shell mi-widget-shell-dataset"', tsx_text)
             self.assertIn('className="mi-widget-shell mi-widget-shell-persistdata"', tsx_text)
-            self.assertIn('className="mi-widget mi-widget-ignored"', tsx_text)
-            self.assertIn('>{"Dataset: id=dsOrder"}', tsx_text)
-            self.assertIn('>{"_PersistData: id=persist1"}', tsx_text)
-            self.assertNotIn('>{"colinfo:', tsx_text)
-            self.assertNotIn('>{"cell:', tsx_text)
-            self.assertNotIn('>{"record', tsx_text)
+            self.assertIn('style={{"display": "none"}}', tsx_text)
+            self.assertNotIn('className="mi-widget mi-widget-ignored"', tsx_text)
 
             self.assertNotIn('className="mi-widget mi-widget-fallback"', tsx_text)
             self.assertNotIn("Unsupported tag: Window", tsx_text)
@@ -1259,6 +1257,79 @@ class TestUiCodegen(unittest.TestCase):
                 '{/* source file=tab.xml node=/Screen[1]/Tab[1]/Contents[1]/TabPage[2] line=5 */}',
                 tsx_text,
             )
+
+    def test_generate_ui_codegen_artifacts_renders_ignored_trace_when_env_enabled(self) -> None:
+        screen = ScreenIR(
+            screen_id="Ignored Trace Visible",
+            root=AstNode(
+                tag="Screen",
+                attributes={"id": "IgnoredTraceVisible"},
+                text=None,
+                source=SourceRef(file_path="ignored.xml", node_path="/Screen[1]", line=1),
+                children=[
+                    AstNode(
+                        tag="Dataset",
+                        attributes={"id": "dsVisible"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="ignored.xml",
+                            node_path="/Screen[1]/Dataset[1]",
+                            line=2,
+                        ),
+                        children=[],
+                    ),
+                    AstNode(
+                        tag="_PersistData",
+                        attributes={"id": "persistVisible"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="ignored.xml",
+                            node_path="/Screen[1]/_PersistData[1]",
+                            line=3,
+                        ),
+                        children=[],
+                    ),
+                    AstNode(
+                        tag="Grid",
+                        attributes={"id": "grdMain"},
+                        text=None,
+                        source=SourceRef(
+                            file_path="ignored.xml",
+                            node_path="/Screen[1]/Grid[1]",
+                            line=4,
+                        ),
+                        children=[
+                            AstNode(
+                                tag="colinfo",
+                                attributes={"id": "c1"},
+                                text=None,
+                                source=SourceRef(
+                                    file_path="ignored.xml",
+                                    node_path="/Screen[1]/Grid[1]/colinfo[1]",
+                                    line=5,
+                                ),
+                                children=[],
+                            )
+                        ],
+                    ),
+                ],
+            ),
+        )
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            out_dir = Path(tmp_dir) / "generated-ui"
+            with mock.patch.dict(os.environ, {"MIFL_UI_RENDER_IGNORED_TRACE": "true"}):
+                report = generate_ui_codegen_artifacts(
+                    screen=screen,
+                    input_xml_path="ignored.xml",
+                    out_dir=out_dir,
+                )
+
+            tsx_text = Path(report.tsx_file).read_text(encoding="utf-8")
+            self.assertIn('className="mi-widget mi-widget-ignored"', tsx_text)
+            self.assertIn('>{"Dataset: id=dsVisible"}', tsx_text)
+            self.assertIn('>{"_PersistData: id=persistVisible"}', tsx_text)
+            self.assertNotIn('>{"colinfo:', tsx_text)
 
     def test_generate_ui_codegen_artifacts_wires_runtime_visibility_rules_from_scripts(
         self,

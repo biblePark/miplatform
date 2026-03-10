@@ -113,6 +113,7 @@ _HIDDEN_IGNORED_TRACE_TAGS = frozenset(
         "data",
     }
 )
+_IGNORED_TRACE_RENDER_ENV = "MIFL_UI_RENDER_IGNORED_TRACE"
 _EVENT_ATTR_TO_REACT_PROP: dict[str, str] = {
     "onabort": "onAbort",
     "onanimationend": "onAnimationEnd",
@@ -886,6 +887,9 @@ def _ignored_trace_label(node: AstNode) -> str:
 
 
 def _should_render_ignored_trace(node: AstNode) -> bool:
+    env_token = os.getenv(_IGNORED_TRACE_RENDER_ENV, "").strip().lower()
+    if env_token not in _TRUE_ATTR_VALUES:
+        return False
     return node.tag.lower() not in _HIDDEN_IGNORED_TRACE_TAGS
 
 
