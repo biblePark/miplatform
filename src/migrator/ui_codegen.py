@@ -98,6 +98,21 @@ _IGNORED_META_TAGS = frozenset(
         "_persistdata",
     }
 )
+_HIDDEN_IGNORED_TRACE_TAGS = frozenset(
+    {
+        "record",
+        "colinfo",
+        "col",
+        "columns",
+        "format",
+        "head",
+        "body",
+        "summary",
+        "cell",
+        "cd",
+        "data",
+    }
+)
 _EVENT_ATTR_TO_REACT_PROP: dict[str, str] = {
     "onabort": "onAbort",
     "onanimationend": "onAnimationEnd",
@@ -803,6 +818,9 @@ def _build_node_style(node: AstNode, *, is_root: bool, widget_kind: str) -> dict
     if enabled is False:
         style["pointerEvents"] = "none"
 
+    if widget_kind == "ignored" and not _should_render_ignored_trace(node):
+        style["display"] = "none"
+
     if widget_kind == "static":
         style.setdefault("lineHeight", "1")
         style.setdefault("overflow", "hidden")
@@ -865,6 +883,10 @@ def _ignored_trace_label(node: AstNode) -> str:
     if node_text is not None:
         return f"{node.tag}: {node_text}"
     return node.tag
+
+
+def _should_render_ignored_trace(node: AstNode) -> bool:
+    return node.tag.lower() not in _HIDDEN_IGNORED_TRACE_TAGS
 
 
 def _widget_kind(tag: str) -> str:
@@ -2588,6 +2610,8 @@ def _render_widget_body_mui(
         return []
 
     if widget_kind == "ignored":
+        if not _should_render_ignored_trace(node):
+            return []
         trace_label = _ignored_trace_label(node)
         return [
             (
@@ -3018,6 +3042,8 @@ def _render_widget_body_strict(
         return []
 
     if widget_kind == "ignored":
+        if not _should_render_ignored_trace(node):
+            return []
         trace_label = _ignored_trace_label(node)
         return [
             (

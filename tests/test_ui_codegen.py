@@ -1137,6 +1137,9 @@ class TestUiCodegen(unittest.TestCase):
             self.assertIn('className="mi-widget mi-widget-ignored"', tsx_text)
             self.assertIn('>{"Dataset: id=dsOrder"}', tsx_text)
             self.assertIn('>{"_PersistData: id=persist1"}', tsx_text)
+            self.assertNotIn('>{"colinfo:', tsx_text)
+            self.assertNotIn('>{"cell:', tsx_text)
+            self.assertNotIn('>{"record', tsx_text)
 
             self.assertNotIn('className="mi-widget mi-widget-fallback"', tsx_text)
             self.assertNotIn("Unsupported tag: Window", tsx_text)

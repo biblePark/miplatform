@@ -391,7 +391,7 @@ PYTHONPATH=src python3 -m migrator gen-ui data/input/xml/<파일명>.xml \
 
 - 컨테이너 계열: `Screen`, `Contents`, `Container`, `Window`, `Form`, `Div`, `Shape`, `Tab`, `TabPage`, `Layout`, `PopupDiv`
 - 위젯 계열: `Button`, `Edit`, `TextArea`, `MaskEdit`, `Static`, `Combo`, `Grid`, `Image`, `Radio`, `Checkbox`, `Calendar`, `CalendarEx`, `Spin`, `TreeView`, `WebBrowser`, `MSIE`, `Rexpert`, `XChart`
-- 비시각 메타 계열(`Dataset`, `colinfo`, `head`, `body`, `summary`, `cell`, `Script` 등)은 fallback 경고 없이 trace 목적의 `mi-widget-ignored` DOM으로 가시화 반영
+- 비시각 메타 계열은 fallback 경고 없이 `mi-widget-ignored` trace DOM으로 반영되며, `colinfo/format/head/body/summary/cell/record` 같은 Grid 구조 메타는 자동 숨김 처리
 
 Grid 렌더링 규칙(현재):
 

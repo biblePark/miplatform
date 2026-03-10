@@ -267,26 +267,73 @@ def _iter_dataset_record_nodes(root_dataset: AstNode):
 def _extract_dataset(dataset_node: AstNode) -> DatasetIR:
     columns: list[DatasetColumnIR] = []
     records: list[DatasetRecordIR] = []
+    constant_columns: dict[str, str] = {}
+
+    seen_columns: set[tuple[str | None, str]] = set()
+
+    def append_column(column_node: AstNode) -> None:
+        column_id = _attr_lookup(column_node.attributes, "id")
+        data_type = _attr_lookup(column_node.attributes, "type")
+        dedupe_key = (
+            column_id.strip().lower() if column_id and column_id.strip() else None,
+            column_node.source.node_path,
+        )
+        if dedupe_key in seen_columns:
+            return
+        seen_columns.add(dedupe_key)
+
+        attributes = dict(column_node.attributes)
+        if column_node.text is not None:
+            attributes["text"] = column_node.text
+        columns.append(
+            DatasetColumnIR(
+                column_id=column_id,
+                data_type=data_type,
+                attributes=attributes,
+                source=column_node.source,
+            )
+        )
 
     for child in dataset_node.children:
-        if child.tag.lower() != "colinfo":
+        child_tag = child.tag.lower()
+        if child_tag == "colinfo":
+            # Spec-style: <colinfo id="..." type="..." size="..." />
+            if _attr_lookup(child.attributes, "id") is not None:
+                append_column(child)
+
+            # Legacy-style: <colinfo><column id="..." type="..." /></colinfo>
+            for column_node in child.children:
+                if column_node.tag.lower() in {"column", "col"}:
+                    append_column(column_node)
             continue
-        for column_node in child.children:
-            if column_node.tag.lower() != "column":
-                continue
-            columns.append(
-                DatasetColumnIR(
-                    column_id=_attr_lookup(column_node.attributes, "id"),
-                    data_type=_attr_lookup(column_node.attributes, "type"),
-                    attributes=dict(column_node.attributes),
-                    source=column_node.source,
-                )
-            )
+
+        # Constant column: <column id="..." type="...">Const</column>
+        if child_tag == "column":
+            append_column(child)
+            column_id = _attr_lookup(child.attributes, "id")
+            if column_id is not None:
+                constant_columns[column_id] = child.text or ""
+            continue
 
     for record_node in _iter_dataset_record_nodes(dataset_node):
+        values = dict(record_node.attributes)
+        for value_node in record_node.children:
+            value_tag = value_node.tag.lower()
+            if value_tag in {"org_record", "orgrecord"}:
+                continue
+            column_key = _attr_lookup(value_node.attributes, "id") or value_node.tag
+            if not column_key.strip():
+                continue
+            value_text = value_node.text or _attr_lookup(value_node.attributes, "value") or ""
+            values[column_key] = value_text
+
+        for const_key, const_value in constant_columns.items():
+            if const_key not in values:
+                values[const_key] = const_value
+
         records.append(
             DatasetRecordIR(
-                values=dict(record_node.attributes),
+                values=values,
                 source=record_node.source,
             )
         )

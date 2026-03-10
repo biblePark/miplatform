@@ -170,6 +170,54 @@ class TestParser(unittest.TestCase):
         self.assertEqual(report.screen.transactions[0].endpoint, "/api/case")
         self.assertEqual(report.screen.transactions[0].method, "GET")
 
+    def test_dataset_extracts_colinfo_column_record_and_constant_values(self) -> None:
+        xml_payload = """<?xml version='1.0' encoding='UTF-8'?>
+<Screen id='DsSpecSample'>
+  <Dataset id='ds_sample'>
+    <column id='Const0' type='STRING'>100</column>
+    <colinfo id='Genre' size='256' type='STRING' />
+    <colinfo id='Year' size='256' type='STRING' />
+    <record type='insert'>
+      <Genre>스릴러</Genre>
+      <Year>2004</Year>
+    </record>
+    <record type='update'>
+      <Genre>범죄</Genre>
+      <Year>2005</Year>
+      <org_record>
+        <Genre>원본</Genre>
+        <Year>2001</Year>
+      </org_record>
+    </record>
+  </Dataset>
+</Screen>
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "dataset_spec_sample.xml"
+            xml_file.write_text(xml_payload, encoding="utf-8")
+            report = parse_xml_file(xml_file, config=ParseConfig(capture_text=True))
+
+        self.assertEqual(len(report.screen.datasets), 1)
+        dataset = report.screen.datasets[0]
+        self.assertEqual(dataset.dataset_id, "ds_sample")
+        self.assertEqual(len(dataset.columns), 3)
+        self.assertEqual(dataset.columns[0].column_id, "Const0")
+        self.assertEqual(dataset.columns[1].column_id, "Genre")
+        self.assertEqual(dataset.columns[2].column_id, "Year")
+
+        self.assertEqual(len(dataset.records), 2)
+        first_record = dataset.records[0].values
+        self.assertEqual(first_record["type"], "insert")
+        self.assertEqual(first_record["Genre"], "스릴러")
+        self.assertEqual(first_record["Year"], "2004")
+        self.assertEqual(first_record["Const0"], "100")
+
+        second_record = dataset.records[1].values
+        self.assertEqual(second_record["type"], "update")
+        self.assertEqual(second_record["Genre"], "범죄")
+        self.assertEqual(second_record["Year"], "2005")
+        self.assertEqual(second_record["Const0"], "100")
+        self.assertNotIn("org_record", second_record)
 
     def test_extracts_transactions_from_script_calls(self) -> None:
         xml_payload = """<?xml version='1.0' encoding='UTF-8'?>
