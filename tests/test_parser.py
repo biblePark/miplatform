@@ -250,6 +250,82 @@ class TestParser(unittest.TestCase):
         self.assertEqual(tx2.endpoint, "http://example.com/pos/Platform.jsp")
         self.assertEqual(tx2.method, "POST")
 
+    def test_parse_div_url_include_merges_external_xml_children(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            workspace = Path(tmp_dir)
+            main_xml = workspace / "main.xml"
+            include_xml = workspace / "CST_CUSTASSETBASEINFOQry_M.xml"
+
+            include_xml.write_text(
+                """<?xml version='1.0' encoding='UTF-8'?>
+<Screen id='IncludedScreen'>
+  <Dataset id='dsIncluded'>
+    <colinfo id='Title' type='STRING' size='256' />
+    <record><Title>Loaded</Title></record>
+  </Dataset>
+  <Contents>
+    <Button id='btnIncluded' text='Included Button' />
+  </Contents>
+</Screen>
+""",
+                encoding="utf-8",
+            )
+            main_xml.write_text(
+                """<?xml version='1.0' encoding='UTF-8'?>
+<Screen id='MainScreen'>
+  <Contents>
+    <Div id='divHost' Url='cst::CST_CUSTASSETBASEINFOQry_M.xml' />
+  </Contents>
+</Screen>
+""",
+                encoding="utf-8",
+            )
+
+            report = parse_xml_file(main_xml, config=ParseConfig(capture_text=True))
+
+        self.assertEqual(len(report.screen.datasets), 1)
+        dataset = report.screen.datasets[0]
+        self.assertEqual(dataset.dataset_id, "dsIncluded")
+        self.assertEqual(len(dataset.records), 1)
+        self.assertEqual(dataset.records[0].values.get("Title"), "Loaded")
+
+        def flatten(node):
+            yield node
+            for child in node.children:
+                yield from flatten(child)
+
+        ast_tags = [node.tag for node in flatten(report.screen.root)]
+        self.assertEqual(report.screen.root.tag, "Screen")
+        self.assertIn("Contents", ast_tags)
+        self.assertIn("Button", ast_tags)
+        self.assertIn("Dataset", ast_tags)
+        self.assertFalse(
+            any("Include URL unresolved" in warning for warning in report.warnings),
+            msg=f"warnings={report.warnings}",
+        )
+        self.assertFalse(
+            any("Include URL parse failure" in warning for warning in report.warnings),
+            msg=f"warnings={report.warnings}",
+        )
+
+    def test_parse_div_url_include_unresolved_emits_warning(self) -> None:
+        xml_payload = """<?xml version='1.0' encoding='UTF-8'?>
+<Screen id='IncludeWarning'>
+  <Contents>
+    <Div id='divHost' Url='cst::missing_include.xml' />
+  </Contents>
+</Screen>
+"""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            xml_file = Path(tmp_dir) / "include_warning.xml"
+            xml_file.write_text(xml_payload, encoding="utf-8")
+            report = parse_xml_file(xml_file, config=ParseConfig(capture_text=True))
+
+        self.assertTrue(
+            any("Include URL unresolved" in warning for warning in report.warnings),
+            msg=f"warnings={report.warnings}",
+        )
+
     def test_parse_euc_kr_declared_xml_with_fallback_decoder(self) -> None:
         xml_payload = (
             "<?xml version='1.0' encoding='euc-kr'?>\n"

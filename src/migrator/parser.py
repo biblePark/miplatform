@@ -60,6 +60,8 @@ _XML_FALLBACK_CODECS: tuple[str, ...] = (
     "euc-kr",
     "iso-8859-1",
 )
+_INCLUDE_FLATTEN_ROOT_TAGS = frozenset({"screen", "form", "window"})
+_DIV_INCLUDE_TAGS = frozenset({"div", "popupdiv"})
 
 
 def _normalize_xml_encoding_name(name: str) -> str:
@@ -243,6 +245,46 @@ def _attr_lookup(attrs: dict[str, str], key: str) -> str | None:
         if attr_key.lower() == key_lower:
             return value
     return None
+
+
+def _normalize_include_url(raw_url: str) -> str | None:
+    candidate = raw_url.strip()
+    if not candidate:
+        return None
+    candidate = candidate.replace("\\", "/")
+    candidate = candidate.split("?", 1)[0].split("#", 1)[0].strip()
+    if not candidate:
+        return None
+
+    if "::" in candidate and "://" not in candidate:
+        _namespace, _sep, remainder = candidate.partition("::")
+        candidate = remainder.strip().lstrip("/")
+    return candidate or None
+
+
+def _candidate_include_paths(*, base_dir: Path, include_ref: str) -> list[Path]:
+    include_path = Path(include_ref)
+    include_name = include_path.name
+    candidates: list[Path] = []
+    seen: set[Path] = set()
+
+    def push(path: Path) -> None:
+        resolved = path.resolve()
+        if resolved in seen:
+            return
+        seen.add(resolved)
+        candidates.append(resolved)
+
+    push(base_dir / include_path)
+    if include_name:
+        push(base_dir / include_name)
+
+    for parent in base_dir.parents:
+        push(parent / include_path)
+        if include_name:
+            push(parent / include_name)
+
+    return candidates
 
 
 def _iter_nodes(root: AstNode):
@@ -551,8 +593,12 @@ def _extract_entities(
 def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> ParseReport:
     cfg = config or ParseConfig()
     source_path = str(Path(file_path).resolve())
+    source_dir = Path(source_path).parent
 
     tree, decode_note = _parse_xml_tree(source_path)
+    include_warnings: list[str] = []
+    include_decode_notes: list[str] = []
+    include_resolution_cache: dict[tuple[str, str], Path | None] = {}
 
     root = tree.getroot()
     tag_counts: dict[str, int] = defaultdict(int)
@@ -561,12 +607,49 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
     unknown_attrs: list[UnknownAttr] = []
     max_depth = 0
 
-    def walk(elem: ET.Element, node_path: str, depth: int) -> AstNode:
+    def resolve_include_path(*, include_url: str, current_file: str) -> Path | None:
+        normalized = _normalize_include_url(include_url)
+        if normalized is None:
+            return None
+        cache_key = (str(Path(current_file).resolve()), normalized)
+        if cache_key in include_resolution_cache:
+            return include_resolution_cache[cache_key]
+
+        current_dir = Path(current_file).resolve().parent
+        for candidate in _candidate_include_paths(base_dir=current_dir, include_ref=normalized):
+            if candidate.is_file():
+                include_resolution_cache[cache_key] = candidate
+                return candidate
+
+        # Fallback search under source directory for namespace-based references like cst::foo.xml
+        include_name = Path(normalized).name
+        if include_name:
+            try:
+                for matched in source_dir.rglob(include_name):
+                    if matched.is_file():
+                        resolved = matched.resolve()
+                        include_resolution_cache[cache_key] = resolved
+                        return resolved
+            except OSError:
+                pass
+
+        include_resolution_cache[cache_key] = None
+        return None
+
+    def walk(
+        elem: ET.Element,
+        node_path: str,
+        depth: int,
+        *,
+        source_file: str,
+        include_stack: tuple[str, ...],
+    ) -> AstNode:
         nonlocal max_depth
         max_depth = max(max_depth, depth)
 
         tag_counts[elem.tag] += 1
-        for attr_name in elem.attrib:
+        attrs = dict(elem.attrib)
+        for attr_name in attrs:
             attr_counts[attr_name] += 1
 
         if cfg.known_tags is not None and elem.tag not in cfg.known_tags:
@@ -575,7 +658,7 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
         if cfg.known_attrs_by_tag is not None:
             allow_attrs = cfg.known_attrs_by_tag.get(elem.tag, cfg.known_attrs_by_tag.get("*"))
             if allow_attrs is not None:
-                for attr_name in elem.attrib:
+                for attr_name in attrs:
                     if attr_name not in allow_attrs:
                         unknown_attrs.append(
                             UnknownAttr(tag=elem.tag, attr=attr_name, node_path=node_path)
@@ -586,7 +669,64 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
         for child in list(elem):
             child_indices[child.tag] += 1
             child_path = f"{node_path}/{child.tag}[{child_indices[child.tag]}]"
-            children.append(walk(child, child_path, depth + 1))
+            children.append(
+                walk(
+                    child,
+                    child_path,
+                    depth + 1,
+                    source_file=source_file,
+                    include_stack=include_stack,
+                )
+            )
+
+        include_url = _attr_lookup(attrs, "url")
+        if (
+            include_url is not None
+            and elem.tag.lower() in _DIV_INCLUDE_TAGS
+            and include_url.strip()
+        ):
+            include_path = resolve_include_path(include_url=include_url, current_file=source_file)
+            if include_path is None:
+                include_warnings.append(
+                    (
+                        f"Include URL unresolved at {node_path}: {include_url!r} "
+                        f"(source={source_file})"
+                    )
+                )
+            else:
+                include_path_str = str(include_path)
+                if include_path_str in include_stack:
+                    include_warnings.append(
+                        (
+                            f"Include URL cycle detected at {node_path}: {include_url!r} "
+                            f"(resolved={include_path_str})"
+                        )
+                    )
+                else:
+                    try:
+                        include_tree, include_decode_note = _parse_xml_tree(include_path_str)
+                        if include_decode_note is not None:
+                            include_decode_notes.append(include_decode_note)
+                        include_root = include_tree.getroot()
+                        include_root_path = f"{node_path}/@include[1]/{include_root.tag}[1]"
+                        included_ast = walk(
+                            include_root,
+                            include_root_path,
+                            depth + 1,
+                            source_file=include_path_str,
+                            include_stack=(*include_stack, include_path_str),
+                        )
+                        if include_root.tag.lower() in _INCLUDE_FLATTEN_ROOT_TAGS:
+                            children.extend(included_ast.children)
+                        else:
+                            children.append(included_ast)
+                    except ParseStrictError as exc:
+                        include_warnings.append(
+                            (
+                                f"Include URL parse failure at {node_path}: {include_url!r} "
+                                f"(resolved={include_path_str}, error={exc})"
+                            )
+                        )
 
         line = getattr(elem, "sourceline", None)
         text = (elem.text or "").strip() if cfg.capture_text else None
@@ -595,14 +735,14 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
 
         return AstNode(
             tag=elem.tag,
-            attributes=dict(elem.attrib),
+            attributes=attrs,
             text=text,
-            source=SourceRef(file_path=source_path, node_path=node_path, line=line),
+            source=SourceRef(file_path=source_file, node_path=node_path, line=line),
             children=children,
         )
 
     root_path = f"/{root.tag}[1]"
-    ast_root = walk(root, root_path, 1)
+    ast_root = walk(root, root_path, 1, source_file=source_path, include_stack=(source_path,))
 
     (
         datasets,
@@ -735,6 +875,8 @@ def parse_xml_file(file_path: str | Path, config: ParseConfig | None = None) -> 
         warnings.append(canonical_gate_message(False))
     if decode_note is not None:
         warnings.append(decode_note)
+    warnings.extend(include_decode_notes)
+    warnings.extend(include_warnings)
 
     if cfg.strict:
         failed = [gate for gate in gates if not gate.passed]
